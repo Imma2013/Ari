@@ -11,9 +11,11 @@ import {
   getCustomOpenaiApiUrl,
   getCustomOpenaiModelName,
 } from '@/lib/config';
-import { orchestratorHandlers } from '@/lib/search';
-import { SearchOrchestrator } from '@/lib/search/orchestrator';
-import { enhanceSystemInstructions } from '@/lib/utils/personalization';
+import { systemInstructions } from '@/lib/utils/personalization';
+import { streamToAsyncIterator, SearchStreamData, createStreamingResponse, SearchStreamController } from '@/lib/utils/streaming';
+import QuickSearchOrchestrator from '@/lib/search/quickSearchOrchestrator';
+import ProSearchOrchestrator from '@/lib/search/proSearchOrchestrator';
+import UltraSearchOrchestrator from '@/lib/search/ultraSearchOrchestrator';
 
 interface chatModel {
   provider: string;
@@ -51,7 +53,6 @@ export const POST = async (req: Request) => {
     }
 
     body.history = body.history || [];
-
     body.stream = body.stream || false;
 
     const history: BaseMessage[] = body.history.map((msg) => {
@@ -115,19 +116,26 @@ export const POST = async (req: Request) => {
       );
     }
 
-    // Determine search mode - default to quickSearch if not specified
-    const searchMode = body.searchMode || 'quickSearch';
-    const searchHandler: SearchOrchestrator = orchestratorHandlers[searchMode];
-
-    if (!searchHandler) {
-      return Response.json(
-        { message: `Invalid search mode: ${searchMode}` },
-        { status: 400 },
-      );
+    // Determine search mode and create orchestrator
+    const searchMode = body.searchMode || 'quick';
+    
+    let orchestrator;
+    switch (searchMode) {
+      case 'proSearch':
+      case 'pro':
+        orchestrator = new ProSearchOrchestrator();
+        break;
+      case 'ultraSearch':
+      case 'ultra':
+        orchestrator = new UltraSearchOrchestrator();
+        break;
+      default:
+        orchestrator = new QuickSearchOrchestrator();
+        break;
     }
 
     // Combine system instructions with personalization data
-    const enhancedSystemInstructions = enhanceSystemInstructions(
+    const enhancedSystemInstructions = systemInstructions(
       body.systemInstructions || '',
       {
         introduceYourself: body.introduceYourself,
@@ -135,221 +143,70 @@ export const POST = async (req: Request) => {
       }
     );
 
-    const emitter = await searchHandler.executeSearch(
-      body.query,
-      history,
-      llm,
-      embeddings,
-      [],
-      enhancedSystemInstructions,
-    );
-
-    if (!body.stream) {
-      return new Promise(
-        (
-          resolve: (value: Response) => void,
-          reject: (value: Response) => void,
-        ) => {
-          let message = '';
-          let sources: any[] = [];
-          let plan: any = null;
-          let steps: any[] = [];
-
-          emitter.on('data', (data: string) => {
-            try {
-              const parsedData = JSON.parse(data);
-              if (parsedData.type === 'response') {
-                message += parsedData.data;
-              } else if (parsedData.type === 'sources') {
-                sources = parsedData.data;
-              } else if (parsedData.type === 'plan') {
-                plan = parsedData.data;
-              } else if (parsedData.type === 'stepUpdate') {
-                steps.push(parsedData.step);
-              } else if (parsedData.type === 'planning') {
-                // Planning phase started
-              } else if (parsedData.type === 'execution') {
-                // Execution phase started
-              }
-            } catch (error) {
-              reject(
-                Response.json(
-                  { message: 'Error parsing data' },
-                  { status: 500 },
-                ),
-              );
-            }
-          });
-
-          emitter.on('end', () => {
-            resolve(Response.json({ 
-              message, 
-              sources, 
-              plan, 
-              steps,
-              orchestrator: true 
-            }, { status: 200 }));
-          });
-
-          emitter.on('error', (error: any) => {
-            reject(
-              Response.json(
-                { message: 'Search error', error },
-                { status: 500 },
-              ),
-            );
-          });
-        },
-      );
-    }
-
-    const encoder = new TextEncoder();
-
-    const abortController = new AbortController();
-    const { signal } = abortController;
-
-    const stream = new ReadableStream({
-      start(controller) {
-        let sources: any[] = [];
-        let plan: any = null;
-        let steps: any[] = [];
-
-        controller.enqueue(
-          encoder.encode(
-            JSON.stringify({
-              type: 'init',
-              data: 'Stream connected',
-            }) + '\n',
-          ),
+    try {
+      if (body.stream) {
+        // Streaming response
+        const streamController = new SearchStreamController();
+        
+        // Execute search with streaming support
+        const resultPromise = orchestrator.planAndExecute(
+          body.query,
+          history,
+          llm,
+          embeddings,
+          [],
+          enhancedSystemInstructions,
+          streamController
         );
 
-        signal.addEventListener('abort', () => {
-          emitter.removeAllListeners();
+        // Return streaming response immediately
+        return createStreamingResponse(streamController.getStream());
+        
+      } else {
+        // Non-streaming response - collect all results and return when complete
+        const result = await orchestrator.planAndExecute(
+          body.query,
+          history,
+          llm,
+          embeddings,
+          [],
+          enhancedSystemInstructions
+        );
 
-          try {
-            controller.close();
-          } catch (error) {}
-        });
+        return Response.json({
+          message: result.message,
+          sources: result.sources,
+          images: result.images,
+          videos: result.videos,
+          searchIntent: result.searchIntent,
+          pipelineStages: result.pipelineStages,
+          executionTime: result.executionTime,
+          mode: result.mode,
+          success: result.success,
+          qsredPipeline: true,
+          orchestrator: true
+        }, { status: 200 });
+      }
 
-        emitter.on('data', (data: string) => {
-          if (signal.aborted) return;
-
-          try {
-            const parsedData = JSON.parse(data);
-
-            if (parsedData.type === 'response') {
-              controller.enqueue(
-                encoder.encode(
-                  JSON.stringify({
-                    type: 'response',
-                    data: parsedData.data,
-                  }) + '\n',
-                ),
-              );
-            } else if (parsedData.type === 'sources') {
-              sources = parsedData.data;
-              controller.enqueue(
-                encoder.encode(
-                  JSON.stringify({
-                    type: 'sources',
-                    data: sources,
-                  }) + '\n',
-                ),
-              );
-            } else if (parsedData.type === 'plan') {
-              plan = parsedData.data;
-              controller.enqueue(
-                encoder.encode(
-                  JSON.stringify({
-                    type: 'plan',
-                    data: plan,
-                  }) + '\n',
-                ),
-              );
-            } else if (parsedData.type === 'stepUpdate') {
-              steps.push(parsedData.step);
-              controller.enqueue(
-                encoder.encode(
-                  JSON.stringify({
-                    type: 'stepUpdate',
-                    step: parsedData.step,
-                  }) + '\n',
-                ),
-              );
-            } else if (parsedData.type === 'planning') {
-              controller.enqueue(
-                encoder.encode(
-                  JSON.stringify({
-                    type: 'planning',
-                    data: parsedData.data,
-                  }) + '\n',
-                ),
-              );
-            } else if (parsedData.type === 'execution') {
-              controller.enqueue(
-                encoder.encode(
-                  JSON.stringify({
-                    type: 'execution',
-                    data: parsedData.data,
-                  }) + '\n',
-                ),
-              );
-            } else if (parsedData.type === 'error') {
-              controller.enqueue(
-                encoder.encode(
-                  JSON.stringify({
-                    type: 'error',
-                    data: parsedData.data,
-                  }) + '\n',
-                ),
-              );
-            }
-          } catch (error) {
-            controller.error(error);
-          }
-        });
-
-        emitter.on('end', () => {
-          if (signal.aborted) return;
-
-          controller.enqueue(
-            encoder.encode(
-              JSON.stringify({
-                type: 'done',
-                data: {
-                  sources,
-                  plan,
-                  steps,
-                  orchestrator: true,
-                },
-              }) + '\n',
-            ),
-          );
-          controller.close();
-        });
-
-        emitter.on('error', (error: any) => {
-          if (signal.aborted) return;
-
-          controller.error(error);
-        });
-      },
-      cancel() {
-        abortController.abort();
-      },
-    });
-
-    return new Response(stream, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache, no-transform',
-        Connection: 'keep-alive',
-      },
-    });
+    } catch (error: any) {
+      console.error('Orchestrator execution error:', error);
+      return Response.json(
+        { 
+          message: 'Q-S-R-E-D Pipeline error', 
+          error: error.message,
+          qsredPipeline: true 
+        },
+        { status: 500 },
+      );
+    }
   } catch (err: any) {
-    console.error(`Error in getting search results: ${err.message}`);
+    console.error(`Error in Q-S-R-E-D search pipeline: ${err.message}`);
     return Response.json(
-      { message: 'An error has occurred.' },
+      { 
+        message: 'An error occurred in the Q-S-R-E-D search pipeline.',
+        error: err.message,
+        qsredPipeline: true
+      },
       { status: 500 },
     );
   }

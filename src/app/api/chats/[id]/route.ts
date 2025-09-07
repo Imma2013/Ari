@@ -19,7 +19,7 @@ export const GET = async (
 
     const chatMessages = await db.query.messages.findMany({
       where: eq(messages.chatId, id),
-      orderBy: (messages, { asc }) => [asc(messages.createdAt)],
+      orderBy: (messages, { asc }) => [asc(messages.conversationTurn), asc(messages.sequenceNumber)],
     });
 
     return Response.json(

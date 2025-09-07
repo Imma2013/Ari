@@ -1,7 +1,6 @@
 import prompts from '@/lib/prompts';
 import crypto from 'crypto';
 import { AIMessage, BaseMessage, HumanMessage } from '@langchain/core/messages';
-import { EventEmitter } from 'stream';
 import {
   chatModelProviders,
   embeddingModelProviders,
@@ -23,7 +22,12 @@ import { orchestratorHandlers } from '@/lib/search';
 import { containsYouTubeLink, extractYouTubeLinks } from '@/lib/utils/youtube';
 import { trackAsync } from '@/lib/performance';
 import { withErrorHandling, circuitBreakers } from '@/lib/errorHandling';
-import { enhanceSystemInstructions } from '@/lib/utils/personalization';
+import { systemInstructions } from '@/lib/utils/personalization';
+import conversationManager, { type ConversationContext } from '@/lib/conversation';
+import { SearchStreamController, streamToAsyncIterator, SearchStreamData } from '@/lib/utils/streaming';
+import QuickSearchOrchestrator from '@/lib/search/quickSearchOrchestrator';
+import ProSearchOrchestrator from '@/lib/search/proSearchOrchestrator';
+import UltraSearchOrchestrator from '@/lib/search/ultraSearchOrchestrator';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -57,19 +61,20 @@ type Body = {
   userLocation?: string;
 };
 
-const handleEmitterEvents = async (
-  stream: EventEmitter,
+const handleStreamingEvents = async (
+  stream: ReadableStream<SearchStreamData>,
   writer: WritableStreamDefaultWriter,
   encoder: TextEncoder,
   aiMessageId: string,
-  chatId: string,
+  context: ConversationContext,
 ) => {
-  let recievedMessage = '';
+  let receivedMessage = '';
   let sources: any[] = [];
   let images: any[] = [];
   let videos: any[] = [];
   let searchIntent: any = null;
   let isStreamClosed = false;
+  let pipelineStages: any[] = [];
 
   // Helper function to safely write to stream
   const safeWrite = async (data: string) => {
@@ -98,193 +103,192 @@ const handleEmitterEvents = async (
     }
   };
 
-  stream.on('data', (data) => {
-    try {
-      const parsedData = JSON.parse(data);
-      console.log('📨 API: Received event type:', parsedData.type);
-      
-      if (parsedData.type === 'response') {
-        console.log('💬 API: Forwarding response, length:', parsedData.data.length);
-        safeWrite(
-          JSON.stringify({
-            type: 'message',
-            data: parsedData.data,
-            messageId: aiMessageId,
-          }) + '\n',
-        ).catch(err => console.error('Write error:', err));
-
-        recievedMessage += parsedData.data;
-      } else if (parsedData.type === 'sources') {
-        console.log('📚 API: Forwarding sources, count:', parsedData.data.length);
-        safeWrite(
-          JSON.stringify({
-            type: 'sources',
-            data: parsedData.data,
-            messageId: aiMessageId,
-          }) + '\n',
-        ).catch(err => console.error('Write error:', err));
-
-        sources = parsedData.data;
-      } else if (parsedData.type === 'images') {
-        console.log('🖼️ API: Forwarding images, count:', parsedData.data.length);
-        safeWrite(
-          JSON.stringify({
-            type: 'images',
-            data: parsedData.data,
-            messageId: aiMessageId,
-          }) + '\n',
-        ).catch(err => console.error('Write error:', err));
-
-        images = parsedData.data;
-      } else if (parsedData.type === 'videos') {
-        console.log('🎥 API: Forwarding videos, count:', parsedData.data.length);
-        safeWrite(
-          JSON.stringify({
-            type: 'videos',
-            data: parsedData.data,
-            messageId: aiMessageId,
-          }) + '\n',
-        ).catch(err => console.error('Write error:', err));
-
-        videos = parsedData.data;
-      } else if (parsedData.type === 'intent_detected') {
-        console.log('🎯 API: Forwarding search intent:', parsedData.data.intent.primaryIntent);
-        safeWrite(
-          JSON.stringify({
-            type: 'intent_detected',
-            data: parsedData.data,
-            messageId: aiMessageId,
-          }) + '\n',
-        ).catch(err => console.error('Write error:', err));
-
-        searchIntent = parsedData.data.intent;
-      } else {
-        console.log('🔄 API: Forwarding event type:', parsedData.type);
-        // Forward all other events (progress, followUps, plan, etc.) directly to the frontend
-        safeWrite(
-          JSON.stringify({
-            type: parsedData.type,
-            data: parsedData.data,
-            messageId: aiMessageId,
-          }) + '\n',
-        ).catch(err => console.error('Write error:', err));
-      }
-    } catch (error) {
-      console.error('Error handling stream data:', error);
-    }
-  });
-
-  stream.on('end', () => {
-    console.log('🔚 API: Stream ended, saving to database...');
-    try {
-      safeWrite(
-        JSON.stringify({
-          type: 'messageEnd',
-          messageId: aiMessageId,
-        }) + '\n',
-      ).then(() => {
-        safeClose();
-      }).catch(err => {
-        console.error('Write error on end:', err);
-        safeClose();
-      });
-
-      // Save to database (even if stream failed)
-      db.insert(messagesSchema)
-        .values({
-          content: recievedMessage,
-          chatId: chatId,
-          messageId: aiMessageId,
-          role: 'assistant',
-          createdAt: new Date().toISOString(),
-          metadata: JSON.stringify({
-            createdAt: new Date(),
-            ...(sources && sources.length > 0 && { sources }),
-            ...(images && images.length > 0 && { images }),
-            ...(videos && videos.length > 0 && { videos }),
-            ...(searchIntent && { searchIntent }),
-          }),
-        })
-        .execute()
-        .catch((dbError) => {
-          console.error('Error saving message to database:', dbError);
-        });
-    } catch (error) {
-      console.error('Error handling stream end:', error);
-    }
-  });
-
-  stream.on('error', (data) => {
-    try {
-      const parsedData = JSON.parse(data);
-      safeWrite(
-        JSON.stringify({
-          type: 'error',
-          data: parsedData.data,
-        }) + '\n',
-      ).then(() => {
-        safeClose();
-      }).catch(err => {
-        console.error('Write error on error:', err);
-        safeClose();
-      });
-    } catch (error) {
-      console.error('Error handling stream error:', error);
-      safeClose();
-    }
-  });
-};
-
-const handleHistorySave = async (
-  message: Message,
-  humanMessageId: string,
-  files: string[],
-) => {
-  const chat = await db.query.chats.findFirst({
-    where: eq(chats.id, message.chatId),
-  });
-
-  if (!chat) {
-    await db
-      .insert(chats)
-      .values({
-        id: message.chatId,
-        title: message.content,
-        createdAt: new Date().toString(),
-
-        files: files.map(getFileDetails),
-      })
-      .execute();
+  // Start the assistant response with pending status
+  try {
+    await conversationManager.startAssistantResponse(context, aiMessageId);
+  } catch (error) {
+    console.error('Failed to start assistant response:', error);
+    await conversationManager.rollbackConversationTurn(context);
+    safeWrite(JSON.stringify({ type: 'error', data: 'Failed to initialize response' }));
+    safeClose();
+    return;
   }
 
-  const messageExists = await db.query.messages.findFirst({
-    where: eq(messagesSchema.messageId, humanMessageId),
-  });
+  try {
+    // Process the stream using async iterator
+    for await (const streamData of streamToAsyncIterator(stream)) {
+      console.log('📨 API: Received stream event type:', streamData.type);
 
-  if (!messageExists) {
-    await db
-      .insert(messagesSchema)
-      .values({
-        content: message.content,
-        chatId: message.chatId,
-        messageId: humanMessageId,
-        role: 'user',
-        createdAt: new Date().toISOString(),
-        metadata: JSON.stringify({
-          createdAt: new Date(),
-        }),
-      })
-      .execute();
-  } else {
-    await db
-      .delete(messagesSchema)
-      .where(
-        and(
-          gt(messagesSchema.id, messageExists.id),
-          eq(messagesSchema.chatId, message.chatId),
-        ),
-      )
-      .execute();
+      switch (streamData.type) {
+        case 'stage_complete':
+          console.log('� API: Forwarding stage complete:', streamData.data.stage);
+          await safeWrite(
+            JSON.stringify({
+              type: 'stage_complete',
+              data: streamData.data,
+              messageId: aiMessageId,
+            }) + '\n',
+          );
+          break;
+
+        case 'sources_ready':
+          console.log('📚 API: Forwarding sources, count:', streamData.data.count);
+          sources = streamData.data.sources;
+          await safeWrite(
+            JSON.stringify({
+              type: 'sources',
+              data: streamData.data.sources,
+              messageId: aiMessageId,
+            }) + '\n',
+          );
+          break;
+
+        case 'images_ready':
+          console.log('🖼️ API: Forwarding images, count:', streamData.data.count);
+          images = streamData.data.images;
+          await safeWrite(
+            JSON.stringify({
+              type: 'images',
+              data: streamData.data.images,
+              messageId: aiMessageId,
+            }) + '\n',
+          );
+          break;
+
+        case 'videos_ready':
+          console.log('🎥 API: Forwarding videos, count:', streamData.data.count);
+          videos = streamData.data.videos;
+          await safeWrite(
+            JSON.stringify({
+              type: 'videos',
+              data: streamData.data.videos,
+              messageId: aiMessageId,
+            }) + '\n',
+          );
+          break;
+
+        case 'response_chunk':
+          console.log('💬 API: Forwarding response chunk, length:', streamData.data.chunk.length);
+          receivedMessage += streamData.data.chunk;
+          await safeWrite(
+            JSON.stringify({
+              type: 'response_chunk',
+              data: streamData.data.chunk,
+              messageId: aiMessageId,
+            }) + '\n',
+          );
+          break;
+
+        case 'response_complete':
+          console.log('� API: Forwarding complete response, length:', streamData.data.message.length);
+          receivedMessage = streamData.data.message;
+          await safeWrite(
+            JSON.stringify({
+              type: 'message',
+              data: streamData.data.message,
+              messageId: aiMessageId,
+            }) + '\n',
+          );
+          break;
+
+        case 'pipeline_progress':
+          console.log('⚡ API: Forwarding pipeline progress:', streamData.data.stage, streamData.data.progress);
+          await safeWrite(
+            JSON.stringify({
+              type: 'pipeline_progress',
+              data: streamData.data,
+              messageId: aiMessageId,
+            }) + '\n',
+          );
+          break;
+
+        case 'stage_progress':
+          console.log('� API: Forwarding stage progress:', streamData.data.stage, streamData.data.subStage);
+          await safeWrite(
+            JSON.stringify({
+              type: 'stage_progress',
+              data: streamData.data,
+              messageId: aiMessageId,
+            }) + '\n',
+          );
+          break;
+
+        case 'search_complete':
+          console.log('✅ API: Search completed, execution time:', streamData.data.executionTime);
+          await safeWrite(
+            JSON.stringify({
+              type: 'search_complete',
+              data: streamData.data,
+              messageId: aiMessageId,
+            }) + '\n',
+          );
+          break;
+
+        case 'search_error':
+          console.log('❌ API: Search error:', streamData.data.error);
+          await safeWrite(
+            JSON.stringify({
+              type: 'search_error',
+              data: streamData.data,
+              messageId: aiMessageId,
+            }) + '\n',
+          );
+          break;
+
+        default:
+          console.log('🔄 API: Forwarding unknown event type:', streamData.type);
+          await safeWrite(
+            JSON.stringify({
+              type: streamData.type,
+              data: streamData.data,
+              messageId: aiMessageId,
+            }) + '\n',
+          );
+          break;
+      }
+    }
+
+    // Stream completed successfully
+    console.log('🔚 API: Stream ended, completing conversation turn...');
+    
+    await safeWrite(
+      JSON.stringify({
+        type: 'messageEnd',
+        messageId: aiMessageId,
+      }) + '\n',
+    );
+
+    safeClose();
+
+    // Complete the conversation turn using the new system
+    await conversationManager.completeAssistantMessage(
+      aiMessageId,
+      receivedMessage,
+      {
+        ...(sources && sources.length > 0 && { sources }),
+        ...(images && images.length > 0 && { images }),
+        ...(videos && videos.length > 0 && { videos }),
+        ...(searchIntent && { searchIntent }),
+      }
+    );
+    
+    console.log('✅ Conversation turn completed successfully');
+    
+  } catch (error) {
+    console.error('Error processing stream:', error);
+    
+    await safeWrite(
+      JSON.stringify({
+        type: 'error',
+        data: { error: error instanceof Error ? error.message : 'Stream processing error' },
+        messageId: aiMessageId,
+      }) + '\n',
+    );
+    
+    safeClose();
+    
+    // Rollback the conversation turn on error
+    await conversationManager.rollbackConversationTurn(context);
   }
 };
 
@@ -361,6 +365,23 @@ export const POST = async (req: Request) => {
     const humanMessageId =
       message.messageId ?? crypto.randomBytes(7).toString('hex');
     const aiMessageId = crypto.randomBytes(7).toString('hex');
+
+    // Start conversation turn using the new system
+    let conversationContext: ConversationContext;
+    try {
+      conversationContext = await conversationManager.beginConversationTurn(
+        message.chatId,
+        humanMessageId,
+        message.content,
+        body.files
+      );
+    } catch (error) {
+      console.error('Failed to start conversation turn:', error);
+      return Response.json(
+        { error: 'Failed to initialize conversation' },
+        { status: 500 }
+      );
+    }
 
     const history: BaseMessage[] = body.history.map((msg) => {
       if (msg[0] === 'human') {
@@ -445,8 +466,18 @@ export const POST = async (req: Request) => {
         
         writer.close();
         
-        // Save to history
-        handleHistorySave(message, humanMessageId, body.files);
+        // Complete conversation turn with the new system
+        try {
+          await conversationManager.completeConversationTurn(
+            conversationContext,
+            aiMessageId,
+            responseData
+          );
+          console.log(`✅ YouTube conversation turn completed successfully (ID: ${requestId})`);
+        } catch (error) {
+          console.error('Error completing YouTube conversation turn:', error);
+          await conversationManager.rollbackConversationTurn(conversationContext);
+        }
         
         console.log(`YouTube processing completed successfully, returning response (ID: ${requestId})`);
         
@@ -466,15 +497,14 @@ export const POST = async (req: Request) => {
       }
     }
 
-    // Use new orchestrator handlers if search mode is specified, fallback to old handlers
+    // Use new orchestrator handlers with streaming
     const searchMode = body.searchMode || 'quickSearch';
     
     console.log('🔍 Search mode:', searchMode);
-    console.log('🗂️ Available orchestrator handlers:', Object.keys(orchestratorHandlers));
-    console.log('🗂️ Using SearchOrchestrator for all modes');
+    console.log('� Using streaming orchestrator');
     
     // Combine system instructions with personalization data
-    const enhancedSystemInstructions = enhanceSystemInstructions(
+    const enhancedSystemInstructions = systemInstructions(
       body.systemInstructions || '',
       {
         introduceYourself: body.introduceYourself,
@@ -484,46 +514,75 @@ export const POST = async (req: Request) => {
     
     console.log('🎯 Enhanced system instructions with personalization data');
     
-    let stream;
+    // Create orchestrator instance based on search mode
+    let orchestrator;
+    switch (searchMode) {
+      case 'proSearch':
+        orchestrator = new ProSearchOrchestrator();
+        break;
+      case 'ultraSearch':
+        orchestrator = new UltraSearchOrchestrator();
+        break;
+      default:
+        orchestrator = new QuickSearchOrchestrator();
+        break;
+    }
     
-    // Use SearchOrchestrator for all search modes
-    console.log('🚀 Using orchestrator:', searchMode);
-    const orchestrator = orchestratorHandlers[searchMode] || orchestratorHandlers['quickSearch'];
-    
-    const responseStream = new TransformStream();
-    const writer = responseStream.writable.getWriter();
-    const encoder = new TextEncoder();
+    // Execute search with streaming
+    try {
+      // Create stream controller for real-time updates
+      const streamController = new SearchStreamController();
+      
+      // Execute search with streaming support
+      const resultPromise = orchestrator.planAndExecute(
+        message.content,
+        history,
+        llm,
+        embedding,
+        body.files,
+        enhancedSystemInstructions,
+        streamController
+      );
 
-    // Set up abort controller for cleanup
-    const controller = new AbortController();
-    
-    // Handle client disconnect
-    req.signal?.addEventListener('abort', () => {
-      console.log('Client disconnected, cleaning up...');
-      controller.abort();
-    });
+      // Get the stream immediately for real-time updates
+      const stream = streamController.getStream();
 
-    // Start the search and immediately attach event listeners
-    stream = await orchestrator.executeSearch(
-      message.content,
-      history,
-      llm,
-      embedding,
-      body.files,
-      enhancedSystemInstructions,
-    );
+      // Create response stream
+      const responseStream = new TransformStream();
+      const writer = responseStream.writable.getWriter();
+      const encoder = new TextEncoder();
 
-    // Attach event listeners immediately after getting the stream
-    handleEmitterEvents(stream, writer, encoder, aiMessageId, message.chatId);
-    handleHistorySave(message, humanMessageId, body.files);
+      // Handle streaming events and result in parallel
+      handleStreamingEvents(stream, writer, encoder, aiMessageId, conversationContext).catch(error => {
+        console.error('Error handling streaming events:', error);
+        writer.close();
+      });
 
-          return new Response(responseStream.readable, {
-            headers: {
-              'Content-Type': 'text/event-stream',
-              Connection: 'keep-alive',
-              'Cache-Control': 'no-cache, no-transform',
-            },
-          });
+      // Return streaming response immediately
+      return new Response(responseStream.readable, {
+        headers: {
+          'Content-Type': 'text/event-stream',
+          Connection: 'keep-alive',
+          'Cache-Control': 'no-cache, no-transform',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Headers': 'Cache-Control'
+        },
+      });
+
+    } catch (error) {
+      console.error('Search execution failed:', error);
+      
+      // Rollback conversation turn on error
+      await conversationManager.rollbackConversationTurn(conversationContext);
+      
+      return Response.json(
+        {
+          type: 'error',
+          data: { error: error instanceof Error ? error.message : 'Unknown error' }
+        },
+        { status: 500 }
+      );
+    }
         },
         'chat_api',
         {
