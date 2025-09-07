@@ -11,6 +11,11 @@ export const messages = sqliteTable('messages', {
     mode: 'json',
   }),
   createdAt: text('createdAt').notNull(),
+  // New fields for better conversation management
+  conversationTurn: integer('conversationTurn').notNull().default(0),
+  sequenceNumber: integer('sequenceNumber').notNull().default(0),
+  parentMessageId: text('parentMessageId'), // For threading support
+  status: text('status').$type<'pending' | 'completed' | 'failed'>().default('completed'),
 }, (table) => ({
   // Add indexes for better query performance
   chatIdIdx: index('chat_id_idx').on(table.chatId),
@@ -20,7 +25,10 @@ export const messages = sqliteTable('messages', {
   chatRoleIdx: index('chat_role_idx').on(table.chatId, table.role),
   // Add index for sorting by creation date
   createdAtIdx: index('messages_created_at_idx').on(table.createdAt),
-
+  // New indexes for conversation management
+  conversationTurnIdx: index('conversation_turn_idx').on(table.chatId, table.conversationTurn),
+  sequenceIdx: index('sequence_idx').on(table.chatId, table.sequenceNumber),
+  statusIdx: index('status_idx').on(table.status),
 }));
 
 interface File {

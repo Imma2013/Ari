@@ -1,0 +1,215 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "675635b5-4bd4-457a-8373-68181968ee98",
+  "prevId": "f04c65a6-3350-4842-83de-0f0b55d333b4",
+  "tables": {
+    "chats": {
+      "name": "chats",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "files": {
+          "name": "files",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": "'[]'"
+        }
+      },
+      "indexes": {
+        "chats_created_at_idx": {
+          "name": "chats_created_at_idx",
+          "columns": [
+            "createdAt"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "messages": {
+      "name": "messages",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "content": {
+          "name": "content",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "chatId": {
+          "name": "chatId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "messageId": {
+          "name": "messageId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "metadata": {
+          "name": "metadata",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "conversationTurn": {
+          "name": "conversationTurn",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "sequenceNumber": {
+          "name": "sequenceNumber",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "parentMessageId": {
+          "name": "parentMessageId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": "'completed'"
+        }
+      },
+      "indexes": {
+        "chat_id_idx": {
+          "name": "chat_id_idx",
+          "columns": [
+            "chatId"
+          ],
+          "isUnique": false
+        },
+        "message_id_idx": {
+          "name": "message_id_idx",
+          "columns": [
+            "messageId"
+          ],
+          "isUnique": false
+        },
+        "role_idx": {
+          "name": "role_idx",
+          "columns": [
+            "type"
+          ],
+          "isUnique": false
+        },
+        "chat_role_idx": {
+          "name": "chat_role_idx",
+          "columns": [
+            "chatId",
+            "type"
+          ],
+          "isUnique": false
+        },
+        "messages_created_at_idx": {
+          "name": "messages_created_at_idx",
+          "columns": [
+            "createdAt"
+          ],
+          "isUnique": false
+        },
+        "conversation_turn_idx": {
+          "name": "conversation_turn_idx",
+          "columns": [
+            "chatId",
+            "conversationTurn"
+          ],
+          "isUnique": false
+        },
+        "sequence_idx": {
+          "name": "sequence_idx",
+          "columns": [
+            "chatId",
+            "sequenceNumber"
+          ],
+          "isUnique": false
+        },
+        "status_idx": {
+          "name": "status_idx",
+          "columns": [
+            "status"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}
