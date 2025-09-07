@@ -2,25 +2,77 @@
 
 import React, { useState, useEffect } from 'react';
 import { TrendingUp, TrendingDown, DollarSign, Activity, RefreshCw, BarChart3, Coins, Globe } from 'lucide-react';
-import MarketDataService, { MarketData, CryptoData, MarketSentiment } from '@/lib/services/marketData';
+
+// Updated type definitions to match the new API
+interface StockData {
+  symbol: string;
+  name: string;
+  price: number;
+  change: number;
+  changePercent: number;
+  marketCap?: number;
+  volume?: number;
+}
+
+interface CryptoData {
+  id: string;
+  name: string;
+  symbol: string;
+  current_price: number;
+  price_change_24h: number;
+  price_change_percentage_24h: number;
+  market_cap: number;
+  total_volume: number;
+}
+
+interface ForexData {
+  pair: string;
+  rate: number;
+  change: number;
+  changePercent: number;
+  timestamp: string;
+}
+
+interface MarketSentiment {
+  fearGreedIndex: number;
+  sentiment: string;
+  timestamp: string;
+}
+
+// Display format for UI
+interface DisplayMarketData {
+  symbol: string;
+  name: string;
+  price: string;
+  change: string;
+  changePercent: string;
+  trend: 'up' | 'down' | 'neutral';
+  marketCap?: string;
+  volume?: string;
+}
 
 const MarketOutlookWidget: React.FC = () => {
-  const [stockData, setStockData] = useState<MarketData[]>([]);
+  const [stockData, setStockData] = useState<StockData[]>([]);
   const [cryptoData, setCryptoData] = useState<CryptoData[]>([]);
-  const [forexData, setForexData] = useState<MarketData[]>([]);
+  const [forexData, setForexData] = useState<ForexData[]>([]);
   const [sentiment, setSentiment] = useState<MarketSentiment | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [activeTab, setActiveTab] = useState<'stocks' | 'crypto' | 'forex'>('stocks');
-
-  const marketService = MarketDataService.getInstance();
+  const [error, setError] = useState<string | null>(null);
 
   const fetchAllMarketData = async () => {
     try {
       setLoading(true);
+      setError(null);
       
-      // Fetch all market data from our API route
+      // Fetch all market data from our updated API route
       const response = await fetch('/api/market-data?type=all');
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
       const result = await response.json();
       
       if (result.success) {
@@ -30,10 +82,11 @@ const MarketOutlookWidget: React.FC = () => {
         setSentiment(result.data.sentiment || null);
         setLastUpdated(new Date());
       } else {
-        console.error('Failed to fetch market data:', result.error);
+        throw new Error(result.message || result.error || 'Failed to fetch market data');
       }
     } catch (error) {
       console.error('Error fetching market data:', error);
+      setError(error instanceof Error ? error.message : 'Failed to fetch market data');
     } finally {
       setLoading(false);
     }
@@ -47,14 +100,38 @@ const MarketOutlookWidget: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const formatCryptoData = (crypto: CryptoData): MarketData => ({
+  // Format stock data for display
+  const formatStockData = (stock: StockData): DisplayMarketData => ({
+    symbol: stock.symbol,
+    name: stock.name,
+    price: `$${stock.price.toFixed(2)}`,
+    change: stock.change > 0 ? `+$${stock.change.toFixed(2)}` : `$${stock.change.toFixed(2)}`,
+    changePercent: `${stock.changePercent > 0 ? '+' : ''}${stock.changePercent.toFixed(2)}%`,
+    trend: stock.changePercent > 0 ? 'up' : stock.changePercent < 0 ? 'down' : 'neutral',
+    marketCap: stock.marketCap ? `$${(stock.marketCap / 1000000000).toFixed(1)}B` : undefined,
+    volume: stock.volume ? stock.volume.toLocaleString() : undefined
+  });
+
+  // Format crypto data for display
+  const formatCryptoData = (crypto: CryptoData): DisplayMarketData => ({
     symbol: crypto.symbol.toUpperCase(),
     name: crypto.name,
-    price: `$${crypto.current_price.toLocaleString()}`,
-    change: crypto.price_change_percentage_24h > 0 ? '+' : '',
+    price: `$${crypto.current_price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`,
+    change: `$${crypto.price_change_24h.toFixed(2)}`,
     changePercent: `${crypto.price_change_percentage_24h > 0 ? '+' : ''}${crypto.price_change_percentage_24h.toFixed(2)}%`,
     trend: crypto.price_change_percentage_24h > 0 ? 'up' : crypto.price_change_percentage_24h < 0 ? 'down' : 'neutral',
-    marketCap: `$${(crypto.market_cap / 1000000000).toFixed(1)}B`
+    marketCap: `$${(crypto.market_cap / 1000000000).toFixed(1)}B`,
+    volume: `$${(crypto.total_volume / 1000000).toFixed(1)}M`
+  });
+
+  // Format forex data for display
+  const formatForexData = (forex: ForexData): DisplayMarketData => ({
+    symbol: forex.pair,
+    name: forex.pair.replace('/', ' / '),
+    price: forex.rate.toFixed(4),
+    change: forex.change > 0 ? `+${forex.change.toFixed(4)}` : `${forex.change.toFixed(4)}`,
+    changePercent: `${forex.changePercent > 0 ? '+' : ''}${forex.changePercent.toFixed(2)}%`,
+    trend: forex.changePercent > 0 ? 'up' : forex.changePercent < 0 ? 'down' : 'neutral'
   });
 
   const formatTime = (date: Date) => {
@@ -81,21 +158,28 @@ const MarketOutlookWidget: React.FC = () => {
     return 'Extreme Greed';
   };
 
-  const renderMarketItem = (item: MarketData, showVolume: boolean = false) => (
+  const renderMarketItem = (item: DisplayMarketData, showVolume: boolean = false) => (
     <div key={item.symbol} className="flex items-center justify-between p-2 bg-light-100 dark:bg-dark-100 rounded">
       <div className="flex-1">
         <div className="text-sm font-medium text-black dark:text-white">{item.name}</div>
         <div className="text-xs text-black/60 dark:text-white/60">{item.symbol}</div>
         {showVolume && item.volume && (
-          <div className="text-xs text-black/50 dark:text-white/50">Vol: {item.volume}</div>
+          <div className="text-xs text-black/50 dark:text-white/50">
+            Vol: {item.volume}
+          </div>
+        )}
+        {item.marketCap && (
+          <div className="text-xs text-black/50 dark:text-white/50">
+            Cap: {item.marketCap}
+          </div>
         )}
       </div>
       <div className="text-right">
         <div className="text-sm font-medium text-black dark:text-white">{item.price}</div>
-        <div className={`text-xs flex items-center ${item.trend === 'up' ? 'text-green-500' : item.trend === 'down' ? 'text-red-500' : 'text-gray-500'}`}>
+        <div className={`text-xs flex items-center justify-end ${item.trend === 'up' ? 'text-green-500' : item.trend === 'down' ? 'text-red-500' : 'text-gray-500'}`}>
           {item.trend === 'up' && <TrendingUp className="w-3 h-3 mr-1" />}
           {item.trend === 'down' && <TrendingDown className="w-3 h-3 mr-1" />}
-          {item.changePercent}
+          <span>{item.changePercent}</span>
         </div>
       </div>
     </div>
@@ -111,11 +195,26 @@ const MarketOutlookWidget: React.FC = () => {
         <button
           onClick={fetchAllMarketData}
           disabled={loading}
-          className="p-1 hover:bg-light-200 dark:hover:bg-dark-200 rounded transition-colors"
+          className="p-1 hover:bg-light-200 dark:hover:bg-dark-200 rounded transition-colors disabled:opacity-50"
+          title="Refresh market data"
         >
           <RefreshCw className={`w-4 h-4 text-black/60 dark:text-white/60 ${loading ? 'animate-spin' : ''}`} />
         </button>
       </div>
+
+      {error && (
+        <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+          <p className="text-sm text-red-600 dark:text-red-400">
+            Error loading market data: {error}
+          </p>
+          <button 
+            onClick={fetchAllMarketData}
+            className="mt-2 text-xs text-red-600 dark:text-red-400 hover:underline"
+          >
+            Try again
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <div className="space-y-3">
@@ -139,7 +238,7 @@ const MarketOutlookWidget: React.FC = () => {
               }`}
             >
               <BarChart3 className="w-3 h-3" />
-              <span>Stocks</span>
+              <span>Stocks ({stockData.length})</span>
             </button>
             <button
               onClick={() => setActiveTab('crypto')}
@@ -150,7 +249,7 @@ const MarketOutlookWidget: React.FC = () => {
               }`}
             >
               <Coins className="w-3 h-3" />
-              <span>Crypto</span>
+              <span>Crypto ({cryptoData.length})</span>
             </button>
             <button
               onClick={() => setActiveTab('forex')}
@@ -161,38 +260,66 @@ const MarketOutlookWidget: React.FC = () => {
               }`}
             >
               <Globe className="w-3 h-3" />
-              <span>Forex</span>
+              <span>Forex ({forexData.length})</span>
             </button>
           </div>
 
           {/* Market Data Content */}
-          <div className="space-y-2 mb-4">
-            {activeTab === 'stocks' && stockData.map(item => renderMarketItem(item, true))}
-            {activeTab === 'crypto' && cryptoData.map(crypto => renderMarketItem(formatCryptoData(crypto)))}
-            {activeTab === 'forex' && forexData.map(item => renderMarketItem(item))}
+          <div className="space-y-2 mb-4 max-h-80 overflow-y-auto">
+            {activeTab === 'stocks' && stockData.length > 0 && 
+              stockData.map(stock => renderMarketItem(formatStockData(stock), true))
+            }
+            {activeTab === 'crypto' && cryptoData.length > 0 && 
+              cryptoData.map(crypto => renderMarketItem(formatCryptoData(crypto), true))
+            }
+            {activeTab === 'forex' && forexData.length > 0 && 
+              forexData.map(forex => renderMarketItem(formatForexData(forex)))
+            }
+            
+            {/* Empty state */}
+            {((activeTab === 'stocks' && stockData.length === 0) ||
+              (activeTab === 'crypto' && cryptoData.length === 0) ||
+              (activeTab === 'forex' && forexData.length === 0)) && !loading && (
+              <div className="text-center py-8 text-black/50 dark:text-white/50">
+                <div className="text-sm">No {activeTab} data available</div>
+                <button 
+                  onClick={fetchAllMarketData}
+                  className="text-xs text-[#24A0ED] hover:underline mt-1"
+                >
+                  Refresh to try again
+                </button>
+              </div>
+            )}
           </div>
 
-          {/* Market Sentiment */}
+          {/* Market Sentiment - Updated to use Fear & Greed Index */}
           {sentiment && (
             <div className="mb-3">
               <h4 className="text-sm font-medium text-black/70 dark:text-white/70 mb-2">Market Sentiment</h4>
-              <div className="grid grid-cols-3 gap-2 mb-2">
-                <div className="p-2 bg-green-50 dark:bg-green-900/20 rounded text-center">
-                  <div className="text-xs text-green-600 dark:text-green-400">Bullish</div>
-                  <div className="text-sm font-medium text-green-700 dark:text-green-300">{sentiment.bullish}%</div>
-                </div>
-                <div className="p-2 bg-red-50 dark:bg-red-900/20 rounded text-center">
-                  <div className="text-xs text-red-600 dark:text-red-400">Bearish</div>
-                  <div className="text-sm font-medium text-red-700 dark:text-red-300">{sentiment.bearish}%</div>
-                </div>
-                <div className="p-2 bg-gray-50 dark:bg-gray-900/20 rounded text-center">
-                  <div className="text-xs text-gray-600 dark:text-gray-400">Neutral</div>
-                  <div className="text-sm font-medium text-gray-700 dark:text-gray-300">{sentiment.neutral}%</div>
-                </div>
-              </div>
-              <div className="text-center">
-                <div className={`text-xs font-medium ${getSentimentColor(sentiment.fearGreedIndex)}`}>
-                  Fear & Greed: {sentiment.fearGreedIndex} ({getSentimentLabel(sentiment.fearGreedIndex)})
+              <div className="p-3 bg-light-100 dark:bg-dark-100 rounded-lg">
+                <div className="text-center">
+                  <div className="text-lg font-bold text-black dark:text-white mb-1">
+                    {sentiment.fearGreedIndex}
+                  </div>
+                  <div className={`text-sm font-medium mb-1 ${getSentimentColor(sentiment.fearGreedIndex)}`}>
+                    {getSentimentLabel(sentiment.fearGreedIndex)}
+                  </div>
+                  <div className="text-xs text-black/60 dark:text-white/60">
+                    Fear & Greed Index
+                  </div>
+                  
+                  {/* Visual indicator */}
+                  <div className="mt-2 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                    <div 
+                      className={`h-2 rounded-full transition-all duration-300 ${
+                        sentiment.fearGreedIndex <= 25 ? 'bg-red-500' :
+                        sentiment.fearGreedIndex <= 45 ? 'bg-orange-500' :
+                        sentiment.fearGreedIndex <= 55 ? 'bg-yellow-500' :
+                        sentiment.fearGreedIndex <= 75 ? 'bg-green-500' : 'bg-green-600'
+                      }`}
+                      style={{ width: `${sentiment.fearGreedIndex}%` }}
+                    />
+                  </div>
                 </div>
               </div>
             </div>

@@ -1,33 +1,44 @@
-import { Trash } from 'lucide-react';
-import {
-  Description,
-  Dialog,
-  DialogBackdrop,
-  DialogPanel,
-  DialogTitle,
-  Transition,
-  TransitionChild,
-} from '@headlessui/react';
-import { Fragment, useState } from 'react';
-import { toast } from 'sonner';
-import { Chat } from '@/app/library/page';
+'use client';
 
-const DeleteChat = ({
+import { useState } from 'react';
+import { toast } from 'sonner';
+import { Trash2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { Button } from '@/components/ui/button';
+import { motion } from 'framer-motion';
+
+interface DeleteChatProps {
+  chatId: string;
+  redirect?: boolean;
+  chats: any[];
+  setChats: (chats: any[]) => void;
+}
+
+const DeleteChat: React.FC<DeleteChatProps> = ({
   chatId,
+  redirect = false,
   chats,
   setChats,
-  redirect = false,
-}: {
-  chatId: string;
-  chats: Chat[];
-  setChats: (chats: Chat[]) => void;
-  redirect?: boolean;
 }) => {
-  const [confirmationDialogOpen, setConfirmationDialogOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
+  const router = useRouter();
 
   const handleDelete = async () => {
-    setLoading(true);
+    if (!chatId) return;
+    
+    setIsDeleting(true);
     try {
       const res = await fetch(`/api/chats/${chatId}`, {
         method: 'DELETE',
@@ -36,89 +47,96 @@ const DeleteChat = ({
         },
       });
 
-      if (res.status != 200) {
-        throw new Error('Failed to delete chat');
+      if (!res.ok) {
+        throw new Error('Failed to delete conversation');
       }
 
-      const newChats = chats.filter((chat) => chat.id !== chatId);
+      // Update chats list if provided
+      if (chats.length > 0) {
+        const newChats = chats.filter(chat => chat.id !== chatId);
+        setChats(newChats);
+      }
 
-      setChats(newChats);
+      toast.success('Conversation deleted successfully', {
+        duration: 3000,
+        style: {
+          background: '#10b981',
+          color: 'white',
+          border: 'none',
+        },
+      });
 
       if (redirect) {
-        window.location.href = '/';
+        router.push('/library');
       }
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(err.message || 'Failed to delete conversation', {
+        duration: 4000,
+        style: {
+          background: '#ef4444',
+          color: 'white',
+          border: 'none',
+        },
+      });
     } finally {
-      setConfirmationDialogOpen(false);
-      setLoading(false);
+      setIsDeleting(false);
+      setIsOpen(false);
     }
   };
 
   return (
-    <>
-      <button
-        onClick={() => {
-          setConfirmationDialogOpen(true);
-        }}
-        className="bg-transparent text-red-400 hover:scale-105 transition duration-200"
-      >
-        <Trash size={17} />
-      </button>
-      <Transition appear show={confirmationDialogOpen} as={Fragment}>
-        <Dialog
-          as="div"
-          className="relative z-50"
-          onClose={() => {
-            if (!loading) {
-              setConfirmationDialogOpen(false);
-            }
-          }}
-        >
-          <DialogBackdrop className="fixed inset-0 bg-black/30" />
-          <div className="fixed inset-0 overflow-y-auto">
-            <div className="flex min-h-full items-center justify-center p-4 text-center">
-              <TransitionChild
-                as={Fragment}
-                enter="ease-out duration-200"
-                enterFrom="opacity-0 scale-95"
-                enterTo="opacity-100 scale-100"
-                leave="ease-in duration-100"
-                leaveFrom="opacity-100 scale-200"
-                leaveTo="opacity-0 scale-95"
-              >
-                <DialogPanel className="w-full max-w-md transform rounded-2xl bg-light-secondary dark:bg-dark-secondary border border-light-200 dark:border-dark-200 p-6 text-left align-middle shadow-xl transition-all">
-                  <DialogTitle className="text-lg font-medium leading-6 dark:text-white">
-                    Delete Confirmation
-                  </DialogTitle>
-                  <Description className="text-sm dark:text-white/70 text-black/70">
-                    Are you sure you want to delete this chat?
-                  </Description>
-                  <div className="flex flex-row items-end justify-end space-x-4 mt-6">
-                    <button
-                      onClick={() => {
-                        if (!loading) {
-                          setConfirmationDialogOpen(false);
-                        }
-                      }}
-                      className="text-black/50 dark:text-white/50 text-sm hover:text-black/70 hover:dark:text-white/70 transition duration-200"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleDelete}
-                      className="text-red-400 text-sm hover:text-red-500 transition duration200"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </DialogPanel>
-              </TransitionChild>
+    <AlertDialog open={isOpen} onOpenChange={setIsOpen}>
+      <AlertDialogTrigger asChild>
+        <button className="p-2 text-white/70 hover:text-white transition-colors hover:bg-red-500/20 rounded-lg">
+          <Trash2 size={17} />
+        </button>
+      </AlertDialogTrigger>
+      <AlertDialogContent className="max-w-md bg-light-secondary dark:bg-dark-secondary border border-light-200 dark:border-dark-200">
+        <AlertDialogHeader>
+          <div className="flex items-center space-x-3 mb-2">
+            <div className="p-2 bg-red-100 dark:bg-red-950/30 rounded-lg">
+              <Trash2 className="w-5 h-5 text-red-600 dark:text-red-400" />
             </div>
+            <AlertDialogTitle className="text-lg font-semibold text-black dark:text-white">
+              Delete Conversation
+            </AlertDialogTitle>
           </div>
-        </Dialog>
-      </Transition>
-    </>
+          <AlertDialogDescription className="text-black/70 dark:text-white/70 leading-relaxed">
+            Are you sure you want to delete this conversation? This action cannot be undone and all messages will be permanently removed.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+
+        <AlertDialogFooter className="flex-col-reverse sm:flex-row gap-2">
+          <AlertDialogCancel 
+            className="bg-transparent hover:bg-light-100 dark:hover:bg-dark-100 text-black dark:text-white border-light-200 dark:border-dark-200"
+            disabled={isDeleting}
+          >
+            Cancel
+          </AlertDialogCancel>
+          <AlertDialogAction
+            onClick={handleDelete}
+            disabled={isDeleting}
+            className="bg-red-500 hover:bg-red-600 text-white border-0 disabled:opacity-50"
+          >
+            {isDeleting ? (
+              <>
+                <motion.div
+                  className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full mr-2"
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                />
+                Deleting...
+              </>
+            ) : (
+              <>
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete conversation
+              </>
+            )}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 };
 

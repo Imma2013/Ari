@@ -9,6 +9,7 @@ import AttachSmall from './MessageInputActions/AttachSmall';
 import Microphone from './MessageInputActions/Microphone';
 import axios from 'axios';
 import { useTranslation } from '@/hooks/useTranslation';
+import { useDebounce } from '@/hooks/useDebounce';
 
 const MessageInput = ({
   sendMessage,
@@ -31,8 +32,27 @@ const MessageInput = ({
   const [mode, setMode] = useState<'multi' | 'single'>('single');
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const suggestionTimeout = useRef<NodeJS.Timeout | null>(null);
   const { t } = useTranslation();
+
+  const fetchSuggestions = useCallback(async (q: string) => {
+    if (!q.trim()) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+    try {
+      const url = `/api/searxng?format=json&q=${encodeURIComponent(q)}`;
+      const res = await axios.get(url);
+      setSuggestions(res.data.suggestions || []);
+      setShowSuggestions(true);
+    } catch {
+      setSuggestions([]);
+      setShowSuggestions(false);
+    }
+  }, []);
+
+  // Debounced version of fetchSuggestions with 300ms delay
+  const debouncedFetchSuggestions = useDebounce(fetchSuggestions, 300);
 
   useEffect(() => {
     if (textareaRows >= 2 && message && mode === 'single') {
@@ -63,31 +83,17 @@ const MessageInput = ({
 
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
+      // Cancel any pending debounced calls when component unmounts
+      debouncedFetchSuggestions.cancel();
     };
-  }, []);
-
-  const fetchSuggestions = useCallback(async (q: string) => {
-    if (!q.trim()) {
-      setSuggestions([]);
-      return;
-    }
-    try {
-      const url = `/api/searxng?format=json&q=${encodeURIComponent(q)}`;
-      const res = await axios.get(url);
-      setSuggestions(res.data.suggestions || []);
-    } catch {
-      setSuggestions([]);
-    }
-  }, []);
+  }, [debouncedFetchSuggestions]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setMessage(e.target.value);
-    if (suggestionTimeout.current) clearTimeout(suggestionTimeout.current);
     const value = e.target.value;
-    suggestionTimeout.current = setTimeout(() => {
-      fetchSuggestions(value);
-      setShowSuggestions(!!value);
-    }, 250);
+    setMessage(value);
+    
+    // Use debounced function to fetch suggestions
+    debouncedFetchSuggestions(value);
   };
 
   return (
@@ -127,26 +133,30 @@ const MessageInput = ({
         onHeightChange={(height, props) => {
           setTextareaRows(Math.ceil(height / props.rowHeight));
         }}
-        className="transition bg-transparent dark:placeholder:text-white/50 placeholder:text-sm text-sm dark:text-white resize-none focus:outline-none w-full px-2 max-h-24 lg:max-h-36 xl:max-h-48 flex-grow flex-shrink"
-                            placeholder={t('chat.typeMessage')}
+        className="transition bg-transparent text-foreground placeholder:text-muted-foreground placeholder:opacity-80 dark:placeholder:opacity-60 text-sm dark:text-foreground resize-none focus:outline-none w-full px-2 max-h-24 lg:max-h-36 xl:max-h-48 flex-grow flex-shrink"
+        placeholder={t('chat.typeMessage')}
       />
       {showSuggestions && suggestions.length > 0 && (
-        <div className="absolute z-50 top-full left-0 right-0 mt-2 bg-dark-secondary border border-dark-200 rounded-lg shadow-xl overflow-hidden">
-          {suggestions.map((s, i) => (
-            <div
-              key={i}
-              className="flex items-center px-4 py-3 text-white hover:bg-[#24A0ED]/10 cursor-pointer text-sm border-b border-dark-200 last:border-b-0 transition-colors duration-150"
-              onMouseDown={() => {
-                setMessage(s);
-                setShowSuggestions(false);
-              }}
-            >
-              <svg className="w-4 h-4 mr-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              {s}
-            </div>
-          ))}
+        <div className="absolute z-50 top-full left-0 right-0 mt-2 w-full rounded-md bg-popover text-popover-foreground shadow-md border border-popover/50 overflow-hidden">
+          <div className="w-full divide-y">
+            {suggestions.map((s, i) => (
+              <button
+                key={i}
+                type="button"
+                onMouseDown={() => {
+                  // use onMouseDown to prevent losing focus before click
+                  setMessage(s);
+                  setShowSuggestions(false);
+                }}
+                className="flex w-full items-center gap-3 px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors duration-150"
+              >
+                <svg className="w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <span className="truncate">{s}</span>
+              </button>
+            ))}
+          </div>
         </div>
       )}
       {mode === 'single' && (
@@ -157,7 +167,7 @@ const MessageInput = ({
           />
           <button
             disabled={message.trim().length === 0 || loading}
-            className="bg-[#24A0ED] text-white disabled:text-black/50 dark:disabled:text-white/50 hover:bg-opacity-85 transition duration-100 disabled:bg-[#e0e0dc79] dark:disabled:bg-[#ececec21] rounded-full p-2"
+            className="bg-[#24A0ED] text-white hover:bg-opacity-85 transition duration-100 rounded-full p-2 disabled:opacity-60 disabled:cursor-not-allowed"
           >
             <ArrowUp className="bg-background" size={17} />
           </button>
@@ -178,7 +188,7 @@ const MessageInput = ({
             />
             <button
               disabled={message.trim().length === 0 || loading}
-              className="bg-[#24A0ED] text-white text-black/50 dark:disabled:text-white/50 hover:bg-opacity-85 transition duration-100 disabled:bg-[#e0e0dc79] dark:disabled:bg-[#ececec21] rounded-full p-2"
+              className="bg-[#24A0ED] text-white hover:bg-opacity-85 transition duration-100 rounded-full p-2 disabled:opacity-60 disabled:cursor-not-allowed"
             >
               <ArrowUp className="bg-background" size={17} />
             </button>

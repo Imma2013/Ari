@@ -24,8 +24,12 @@ import {
   ExternalLink,
 } from 'lucide-react';
 
+import { PipelineStage, SearchProgress as OrchestratorProgress } from '@/lib/search/orchestrator';
+
 interface SearchProgressProps {
   mode?: 'quick' | 'pro' | 'ultra';
+  pipelineStages?: PipelineStage[];
+  searchProgress?: OrchestratorProgress;
   progress?: {
     step: string;
     message: string;
@@ -42,6 +46,17 @@ interface SearchProgressProps {
     title: string;
     url: string;
     icon?: string;
+  }>;
+  images?: Array<{
+    img_src: string;
+    url: string;
+    title: string;
+  }>;
+  videos?: Array<{
+    img_src: string;
+    url: string;
+    title: string;
+    iframe_src: string;
   }>;
   isVisible?: boolean;
   onPause?: () => void;
@@ -129,9 +144,13 @@ const getStepIcon = (stepName: string, mode: 'quick' | 'pro' | 'ultra' = 'quick'
 
 const SearchProgress: React.FC<SearchProgressProps> = ({ 
   mode = 'quick',
+  pipelineStages = [],
+  searchProgress,
   progress,
   agents = [],
   sources = [],
+  images = [],
+  videos = [],
   isVisible = true,
   onPause,
   onResume,

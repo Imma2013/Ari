@@ -69,7 +69,6 @@ const Chat = ({
         return (
           <Fragment key={msg.messageId}>
             <MessageBox
-              key={i}
               message={msg}
               messageIndex={i}
               history={messages}

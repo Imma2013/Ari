@@ -30,33 +30,23 @@ import FollowUpQuestions from './FollowUpQuestions';
 import MessageImages from './MessageImages';
 import MessageVideos from './MessageVideos';
 import { useSpeech } from 'react-text-to-speech';
-import ThinkBox from './ThinkBox';
 import SearchSteps from './SearchSteps';
-import SearchStepper, { SearchProgressStep, SourcesProgressStep, BasicProgressStep } from './SearchStepper';
+import SearchStepper, { SearchProgressStep, SourcesProgressStep, BasicProgressStep} from './SearchStepper';
 import SearchProgress from './SearchProgress';
-
-const ThinkTagProcessor = ({ children }: { children: React.ReactNode }) => {
-  return <ThinkBox content={children as string} />;
-};
-
 
 
 type TabType = 'answer' | 'images' | 'videos' | 'sources' | 'steps';
 
 const StepsComponent = ({ 
   loading, 
-  sources, 
+  message,
   query,
-  currentStep,
-  steps,
   progress,
   mode = 'quick'
 }: { 
   loading: boolean;
-  sources?: any[];
+  message: Message;
   query: string;
-  currentStep?: string;
-  steps?: string[];
   progress?: {
     step: string;
     message: string;
@@ -66,107 +56,130 @@ const StepsComponent = ({
   mode?: 'quick' | 'pro' | 'ultra';
 }) => {
   // Convert sources to the format expected by SourcesStep
-  const formattedSources = useMemo(() => sources?.map(source => ({
+  const formattedSources = useMemo(() => message.sources?.map(source => ({
     title: source.metadata?.title || 'Untitled',
     url: source.metadata?.url || '',
     icon: `https://s2.googleusercontent.com/s2/favicons?domain_url=${source.metadata?.url}&sz=16`
-  })) || [], [sources]);
+  })) || [], [message.sources]);
 
-  // Enhanced step progression mapping for better visualization
-  const stepProgression = useMemo((): Record<string, string> => ({
-    // Search phase steps
-    'planning': 'search',
-    'pro_planning': 'search', 
-    'ultra_planning': 'search',
-    'query_generation': 'search',
-    'ultra_query_generation': 'search',
-    'queries_ready': 'search',
-    'ultra_agents_init': 'search',
-    'searching': 'search',
+  // Pipeline stage progression mapping for Q-S-R-E-D pipeline
+  const stageProgression = useMemo((): Record<string, string> => ({
+    // Query Understanding (Q)
+    'Q': 'query',
+    'query_understanding': 'query',
+    'intent_detection': 'query',
+    'query_expansion': 'query',
+    
+    // Search (S)
+    'S': 'search',
+    'web_search': 'search',
+    'document_retrieval': 'search',
     'multi_search': 'search',
-    'ultra_batch_search': 'search',
-    'searching_query': 'search',
-    'cross_validation': 'search',
-    'dynamic_replan': 'search',
     
-    // Sources phase steps
-    'sources_found': 'sources',
-    'query_results': 'sources', 
-    'processing': 'sources',
-    'ultra_processing': 'sources',
+    // Ranking (R)
+    'R': 'ranking',
+    'neural_reranking': 'ranking',
+    'relevance_scoring': 'ranking',
     
-    // Generation phase steps
-    'generating': 'generating',
-    'ultra_generating': 'generating',
-    'completing': 'generating',
+    // Extraction (E)
+    'E': 'extraction',
+    'contextual_fusion': 'extraction',
+    'content_extraction': 'extraction',
     
-    // Complete phase
-    'complete': 'finished',
-    'ultra_complete': 'finished'
+    // Delivery (D)
+    'D': 'delivery',
+    'response_generation': 'delivery',
+    'answer_synthesis': 'delivery',
+    'final_response': 'delivery'
   }), []);
 
-  // Enhanced phase descriptions
+  // Enhanced phase descriptions for Q-S-R-E-D pipeline
   const phaseDescriptions = useMemo(() => ({
+    query: {
+      title: 'Query Understanding',
+      description: mode === 'ultra' ? 'Advanced intent detection and query expansion' :
+                  mode === 'pro' ? 'Comprehensive query analysis' :
+                  'Efficient query processing'
+    },
     search: {
-      title: 'Research Planning & Execution',
-      description: mode === 'ultra' ? 'Multi-agent parallel research with dynamic replanning' :
-                  mode === 'pro' ? 'Comprehensive multi-angle search strategy' :
-                  'Efficient search planning and execution'
+      title: 'Information Retrieval',
+      description: mode === 'ultra' ? 'Multi-agent parallel search execution' :
+                  mode === 'pro' ? 'Enhanced multi-source search' :
+                  'Targeted web search'
     },
-    sources: {
-      title: 'Source Analysis & Processing',
-      description: mode === 'ultra' ? 'Advanced neural reranking and contextual fusion' :
-                  mode === 'pro' ? 'Enhanced document processing and ranking' :
-                  'Document retrieval and relevance scoring'
+    ranking: {
+      title: 'Neural Reranking',
+      description: mode === 'ultra' ? 'Advanced relevance scoring with adaptive weights' :
+                  mode === 'pro' ? 'Enhanced semantic ranking' :
+                  'Relevance-based sorting'
     },
-    generating: {
-      title: 'Answer Generation',
-      description: mode === 'ultra' ? 'Multi-model orchestrated response synthesis' :
-                  mode === 'pro' ? 'Deep analysis and comprehensive answer generation' :
-                  'Focused answer generation from verified sources'
+    extraction: {
+      title: 'Content Extraction',
+      description: mode === 'ultra' ? 'Contextual fusion with batched enhancement' :
+                  mode === 'pro' ? 'Smart content chunking' :
+                  'Key information extraction'
     },
-    finished: {
-      title: 'Complete',
-      description: 'Research completed with comprehensive results'
+    delivery: {
+      title: 'Response Generation',
+      description: mode === 'ultra' ? 'Multi-model orchestrated synthesis' :
+                  mode === 'pro' ? 'Comprehensive answer generation' :
+                  'Focused response creation'
     }
   }), [mode]);
 
-  // Calculate current phase and steps
+  // Calculate current phase from pipeline stages or progress
   const currentPhase = useMemo(() => {
-    if (!progress) return 'search';
-    return stepProgression[progress.step] || 'search';
-  }, [progress, stepProgression]);
+    if (message.pipelineStages && message.pipelineStages.length > 0) {
+      const runningStage = message.pipelineStages.find(stage => stage.status === 'running');
+      const lastCompletedStage = message.pipelineStages.filter(stage => stage.status === 'completed').pop();
+      const currentStage = runningStage || lastCompletedStage;
+      if (currentStage) {
+        return stageProgression[currentStage.stage] || stageProgression[currentStage.name] || 'query';
+      }
+    }
+    if (progress) {
+      return stageProgression[progress.step] || 'query';
+    }
+    return 'query';
+  }, [progress, stageProgression, message.pipelineStages]);
 
-  // Calculate visible steps based on current phase and sources
+  // Calculate visible steps based on current pipeline stage and sources
   const visibleSteps = useMemo(() => {
     if (!loading && !progress) {
-      return ['search', 'sources', 'generating', 'finished'];
+      return ['query', 'search', 'ranking', 'extraction', 'delivery'];
     }
 
     const steps: string[] = [];
     
-    // Always show search step
-    steps.push('search');
+    // Always show query step
+    steps.push('query');
     
-    // Add sources step if we have sources or we're in sources phase or beyond
-    if (formattedSources.length > 0 || ['sources', 'generating', 'finished'].includes(currentPhase)) {
-      steps.push('sources');
+    // Add search step if we have started or completed Q stage
+    if (message.pipelineStages?.some(stage => stage.stage === 'Q' && stage.status !== 'pending') || 
+        ['search', 'ranking', 'extraction', 'delivery'].includes(currentPhase)) {
+      steps.push('search');
     }
     
-    // Add generating step if we're in generating phase or beyond
-    if (['generating', 'finished'].includes(currentPhase)) {
-      steps.push('generating');
+    // Add ranking step if we have sources or we're in ranking phase or beyond
+    if (formattedSources.length > 0 || 
+        ['ranking', 'extraction', 'delivery'].includes(currentPhase)) {
+      steps.push('ranking');
     }
     
-    // Add finished step if we're in finished phase or loading is complete
-    if (currentPhase === 'finished' || !loading) {
-      steps.push('finished');
+    // Add extraction step if we're in extraction phase or beyond
+    if (['extraction', 'delivery'].includes(currentPhase)) {
+      steps.push('extraction');
+    }
+    
+    // Add delivery step if we're in delivery phase or loading is complete
+    if (currentPhase === 'delivery' || !loading) {
+      steps.push('delivery');
     }
     
     return steps;
-  }, [loading, progress, currentPhase, formattedSources.length]);
+  }, [loading, progress, currentPhase, formattedSources.length, message.pipelineStages]);
 
-  // Calculate completed steps
+  // Calculate completed steps based on pipeline stages
   const completedSteps = useMemo(() => {
     if (!loading) {
       return [...visibleSteps];
@@ -174,43 +187,64 @@ const StepsComponent = ({
 
     const completed: string[] = [];
     
-    // Complete search if we're past it
-    if (['sources', 'generating', 'finished'].includes(currentPhase) || formattedSources.length > 0) {
+    // Complete query if Q stage is completed
+    if (message.pipelineStages?.some(stage => stage.stage === 'Q' && stage.status === 'completed')) {
+      completed.push('query');
+    }
+    
+    // Complete search if S stage is completed
+    if (message.pipelineStages?.some(stage => stage.stage === 'S' && stage.status === 'completed') || 
+        formattedSources.length > 0) {
       completed.push('search');
     }
     
-    // Complete sources if we're past it
-    if (['generating', 'finished'].includes(currentPhase)) {
-      completed.push('sources');
+    // Complete ranking if R stage is completed
+    if (message.pipelineStages?.some(stage => stage.stage === 'R' && stage.status === 'completed')) {
+      completed.push('ranking');
     }
     
-    // Complete generating if we're finished
-    if (currentPhase === 'finished') {
-      completed.push('generating');
+    // Complete extraction if E stage is completed
+    if (message.pipelineStages?.some(stage => stage.stage === 'E' && stage.status === 'completed')) {
+      completed.push('extraction');
     }
     
-    // Complete finished if loading is done
-    if (!loading) {
-      completed.push('finished');
+    // Complete delivery if D stage is completed or loading is done
+    if (message.pipelineStages?.some(stage => stage.stage === 'D' && stage.status === 'completed') || 
+        !loading) {
+      completed.push('delivery');
     }
     
     return completed;
-  }, [loading, currentPhase, formattedSources.length, visibleSteps]);
+  }, [loading, formattedSources.length, visibleSteps, message.pipelineStages]);
 
-  // Get progress for a specific step
-  const getStepProgress = (stepName: string) => {
-    if (!progress) return undefined;
+  // Get progress for a specific pipeline stage
+  const getStageProgress = (stageName: string) => {
+    if (message.pipelineStages) {
+      const stage = message.pipelineStages.find(s => s.stage === stageName || s.name.toLowerCase().includes(stageName));
+      if (stage) {
+        return {
+          step: stage.stage,
+          message: stage.name,
+          details: `Stage ${stage.stage} - ${stage.status}`,
+          progress: stage.progress
+        };
+      }
+    }
     
-    const stepMapping: Record<string, string[]> = {
-      'search': ['planning', 'pro_planning', 'query_generation', 'queries_ready', 'searching', 'multi_search', 'searching_query'],
-      'sources': ['sources_found', 'query_results', 'processing'],
-      'generating': ['generating', 'completing'],
-      'finished': ['complete']
-    };
-    
-    const relevantSteps = stepMapping[stepName] || [];
-    if (relevantSteps.includes(progress.step)) {
-      return progress;
+    // Fallback to old progress system
+    if (progress) {
+      const stageMapping: Record<string, string[]> = {
+        'query': ['Q', 'query_understanding', 'intent_detection', 'query_expansion'],
+        'search': ['S', 'web_search', 'document_retrieval', 'multi_search'],
+        'ranking': ['R', 'neural_reranking', 'relevance_scoring'],
+        'extraction': ['E', 'contextual_fusion', 'content_extraction'],
+        'delivery': ['D', 'response_generation', 'answer_synthesis']
+      };
+      
+      const relevantSteps = stageMapping[stageName] || [];
+      if (relevantSteps.some(step => progress.step.includes(step))) {
+        return progress;
+      }
     }
     
     return undefined;
@@ -218,9 +252,9 @@ const StepsComponent = ({
 
   // Determine if step is active (currently running)
   const isStepActive = (stepName: string) => {
-    if (!loading || !progress) return false;
-    const stepProgress = getStepProgress(stepName);
-    return stepProgress !== undefined && !completedSteps.includes(stepName);
+    if (!loading) return false;
+    const stageProgress = getStageProgress(stepName);
+    return stageProgress !== undefined && !completedSteps.includes(stepName);
   };
 
   // Determine if step is completed
@@ -234,37 +268,48 @@ const StepsComponent = ({
   return (
     <div className="w-full">
       <SearchStepper currentStep={currentStepNumber} mode={mode}>
-        {visibleSteps.includes('search') && (
+        {visibleSteps.includes('query') && (
           <SearchProgressStep 
             query={query} 
-            progress={getStepProgress('search')}
+            progress={getStageProgress('query')}
             mode={mode}
           />
         )}
-        {visibleSteps.includes('sources') && (
-          <SourcesProgressStep 
-            sources={formattedSources}
-            progress={getStepProgress('sources')}
-            mode={mode}
-          />
-        )}
-        {visibleSteps.includes('generating') && (
+        {visibleSteps.includes('search') && (
           <BasicProgressStep 
-            progress={getStepProgress('generating')}
-            isActive={isStepActive('generating')}
-            isComplete={isStepCompleted('generating')}
+            progress={getStageProgress('search')}
+            isActive={isStepActive('search')}
+            isComplete={isStepCompleted('search')}
             mode={mode}
           >
-            Generating answer...
+            Information Retrieval
           </BasicProgressStep>
         )}
-        {visibleSteps.includes('finished') && (
+        {visibleSteps.includes('ranking') && (
+          <SourcesProgressStep 
+            sources={formattedSources}
+            progress={getStageProgress('ranking')}
+            mode={mode}
+          />
+        )}
+        {visibleSteps.includes('extraction') && (
           <BasicProgressStep 
-            progress={getStepProgress('finished')}
-            isComplete={!loading || isStepCompleted('finished')}
+            progress={getStageProgress('extraction')}
+            isActive={isStepActive('extraction')}
+            isComplete={isStepCompleted('extraction')}
             mode={mode}
           >
-            Finished
+            Content Extraction & Fusion
+          </BasicProgressStep>
+        )}
+        {visibleSteps.includes('delivery') && (
+          <BasicProgressStep 
+            progress={getStageProgress('delivery')}
+            isActive={isStepActive('delivery')}
+            isComplete={isStepCompleted('delivery')}
+            mode={mode}
+          >
+            {!loading ? 'Response Complete' : 'Generating Response'}
           </BasicProgressStep>
         )}
       </SearchStepper>
@@ -492,14 +537,6 @@ const MessageBox = ({
 
   const { speechStatus, start, stop } = useSpeech({ text: speechMessage });
 
-  const markdownOverrides: MarkdownToJSX.Options = {
-    overrides: {
-      think: {
-        component: ThinkTagProcessor,
-      },
-    },
-  };
-
   const tabs = [
     {
       id: 'answer' as TabType,
@@ -548,15 +585,17 @@ const MessageBox = ({
               </div>
             ) : (
               <>
-                <Markdown
+                {/* Main Message Content */}
+                {parsedMessage && (
+                  <Markdown
                   className={cn(
                     'prose prose-h1:mb-3 prose-h2:mb-2 prose-h2:mt-6 prose-h2:font-[800] prose-h3:mt-4 prose-h3:mb-1.5 prose-h3:font-[600] dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 font-[400]',
                     'max-w-none break-words text-black dark:text-white',
                   )}
-                  options={markdownOverrides}
                 >
                   {parsedMessage}
                 </Markdown>
+                )}
 
                 {/* Follow-up Questions */}
                 {!loading && (message.followUpQuestions || message.relatedQueries) && (
@@ -753,9 +792,9 @@ const MessageBox = ({
       case 'steps':
         return (
           <div className="flex flex-col space-y-4">
-            {message.isOrchestrator && message.orchestratorSteps ? (
+            {message.pipelineStages && message.pipelineStages.length > 0 ? (
               <SearchSteps 
-                steps={message.orchestratorSteps}
+                pipelineStages={message.pipelineStages}
                 isVisible={true}
                 mode={searchMode}
                 progress={message.progress}
@@ -763,18 +802,19 @@ const MessageBox = ({
             ) : loading && isLast ? (
               <SearchProgress
                 mode={searchMode}
+                pipelineStages={message.pipelineStages}
                 progress={message.progress}
                 agents={agents}
                 sources={formattedSources}
+                images={message.images}
+                videos={message.videos}
                 isVisible={true}
               />
             ) : (
               <StepsComponent 
                 loading={loading && isLast}
-                sources={message.sources}
+                message={message}
                 query={message.role === 'user' ? message.content : (history[messageIndex - 1]?.content || '')}
-                currentStep={message.currentStep}
-                steps={message.steps}
                 progress={message.progress}
                 mode={searchMode}
               />

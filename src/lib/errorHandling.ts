@@ -96,7 +96,10 @@ class RetryHandler {
         }
 
         const delay = this.calculateDelay(attempt);
-        await this.sleep(delay);
+        // Add jitter (+/- 50%) to reduce thundering herd
+        const jitter = Math.random() * delay * 0.5;
+        const jittered = Math.max(0, delay + (Math.random() < 0.5 ? -jitter : jitter));
+        await this.sleep(jittered);
       }
     }
 
@@ -111,8 +114,8 @@ class RetryHandler {
   }
 
   private calculateDelay(attempt: number): number {
-    const delay = this.config.baseDelay * Math.pow(this.config.backoffMultiplier, attempt - 1);
-    return Math.min(delay, this.config.maxDelay);
+  const delay = this.config.baseDelay * Math.pow(this.config.backoffMultiplier, attempt - 1);
+  return Math.min(delay, this.config.maxDelay);
   }
 
   private sleep(ms: number): Promise<void> {

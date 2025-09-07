@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { SearchStep } from '@/lib/search/quickSearchOrchestrator';
+import { PipelineStage } from '@/lib/search/orchestrator';
 import { 
   Search, 
   Brain, 
@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 
 interface SearchStepsProps {
-  steps: SearchStep[];
+  pipelineStages: PipelineStage[];
   isVisible: boolean;
   mode?: 'quick' | 'pro' | 'ultra';
   progress?: {
@@ -112,7 +112,7 @@ const getStepIcon = (stepName: string, mode: 'quick' | 'pro' | 'ultra' = 'quick'
   return <Lightbulb size={16} />;
 };
 
-const getStatusColor = (status: SearchStep['status'], mode: 'quick' | 'pro' | 'ultra' = 'quick') => {
+const getStatusColor = (status: PipelineStage['status'], mode: 'quick' | 'pro' | 'ultra' = 'quick') => {
   const modeConfig = getModeConfig(mode);
   
   switch (status) {
@@ -137,7 +137,7 @@ const getStatusColor = (status: SearchStep['status'], mode: 'quick' | 'pro' | 'u
         text: 'text-green-700',
         icon: 'text-green-500'
       };
-    case 'failed':
+    case 'error':
       return {
         bg: 'bg-red-50 dark:bg-red-900/20',
         border: 'border-red-300',
@@ -154,7 +154,7 @@ const getStatusColor = (status: SearchStep['status'], mode: 'quick' | 'pro' | 'u
   }
 };
 
-const getStatusIcon = (status: SearchStep['status']) => {
+const getStatusIcon = (status: PipelineStage['status']) => {
   switch (status) {
     case 'pending':
       return '⏳';
@@ -162,41 +162,41 @@ const getStatusIcon = (status: SearchStep['status']) => {
       return '🔄';
     case 'completed':
       return '✅';
-    case 'failed':
+    case 'error':
       return '❌';
     default:
       return '⏳';
   }
 };
 
-const getDuration = (step: SearchStep) => {
-  if (step.startTime && step.endTime) {
-    const duration = new Date(step.endTime).getTime() - new Date(step.startTime).getTime();
+const getDuration = (stage: PipelineStage) => {
+  if (stage.startTime && stage.endTime) {
+    const duration = stage.endTime - stage.startTime;
     return `${Math.round(duration / 1000)}s`;
   }
-  if (step.startTime) {
-    const duration = Date.now() - new Date(step.startTime).getTime();
+  if (stage.startTime) {
+    const duration = Date.now() - stage.startTime;
     return `${Math.round(duration / 1000)}s`;
   }
   return '';
 };
 
 const SearchSteps: React.FC<SearchStepsProps> = ({ 
-  steps, 
+  pipelineStages, 
   isVisible, 
   mode = 'quick',
   progress 
 }) => {
-  const [expandedStep, setExpandedStep] = useState<string | null>(null);
+  const [expandedStage, setExpandedStage] = useState<string | null>(null);
   const modeConfig = getModeConfig(mode);
   
-  if (!isVisible || !steps || steps.length === 0) {
+  if (!isVisible || !pipelineStages || pipelineStages.length === 0) {
     return null;
   }
 
-  const completedSteps = steps.filter(s => s.status === 'completed').length;
-  const runningSteps = steps.filter(s => s.status === 'running').length;
-  const failedSteps = steps.filter(s => s.status === 'failed').length;
+  const completedStages = pipelineStages.filter((s: PipelineStage) => s.status === 'completed').length;
+  const runningStages = pipelineStages.filter((s: PipelineStage) => s.status === 'running').length;
+  const failedStages = pipelineStages.filter((s: PipelineStage) => s.status === 'error').length;
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
@@ -214,10 +214,10 @@ const SearchSteps: React.FC<SearchStepsProps> = ({
           </div>
           <div className="text-right">
             <div className="text-2xl font-bold text-gray-900 dark:text-white">
-              {completedSteps}/{steps.length}
+              {completedStages}/{pipelineStages.length}
             </div>
             <div className="text-xs text-gray-500 dark:text-gray-400">
-              {runningSteps > 0 ? `${runningSteps} running` : 'All steps completed'}
+              {runningStages > 0 ? `${runningStages} running` : 'All stages completed'}
             </div>
           </div>
         </div>
@@ -226,63 +226,63 @@ const SearchSteps: React.FC<SearchStepsProps> = ({
         <div className="mt-4 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
           <div 
             className={`bg-gradient-to-r ${modeConfig.gradient} h-2 rounded-full transition-all duration-500 ease-out`}
-            style={{ width: `${(completedSteps / steps.length) * 100}%` }}
+            style={{ width: `${(completedStages / pipelineStages.length) * 100}%` }}
           />
         </div>
       </div>
       
       {/* Steps List */}
       <div className="p-4 space-y-3 max-h-96 overflow-y-auto">
-        {steps.map((step, index) => {
-          const statusColors = getStatusColor(step.status, mode);
-          const isExpanded = expandedStep === step.id;
+        {pipelineStages.map((stage: PipelineStage, index: number) => {
+          const statusColors = getStatusColor(stage.status, mode);
+          const isExpanded = expandedStage === `${stage.stage}-${index}`;
           
           return (
             <div
-              key={step.id}
+              key={`${stage.stage}-${index}`}
               className={`rounded-lg border transition-all duration-200 cursor-pointer hover:shadow-md ${
                 statusColors.bg
               } ${statusColors.border}`}
-              onClick={() => setExpandedStep(isExpanded ? null : step.id)}
+              onClick={() => setExpandedStage(isExpanded ? null : `${stage.stage}-${index}`)}
             >
               <div className="p-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-3 flex-1">
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                      step.status === 'running'
+                      stage.status === 'running'
                         ? `${modeConfig.color === 'blue' ? 'bg-blue-100 text-blue-700' : modeConfig.color === 'purple' ? 'bg-purple-100 text-purple-700' : 'bg-emerald-100 text-emerald-700'}`
-                        : step.status === 'completed'
+                        : stage.status === 'completed'
                         ? 'bg-green-100 text-green-700'
-                        : step.status === 'failed'
+                        : stage.status === 'error'
                         ? 'bg-red-100 text-red-700'
                         : 'bg-gray-100 text-gray-600'
                     }`}>
-                      {getStatusIcon(step.status)}
+                      {getStatusIcon(stage.status)}
                     </div>
                     <div className="flex items-center space-x-2 flex-1">
-                      {getStepIcon(step.name, mode)}
+                      {getStepIcon(stage.name, mode)}
                       <div className="flex-1">
                         <div className={`font-medium ${statusColors.text}`}>
-                          {step.name}
+                          {stage.name}
                         </div>
                         <div className="text-xs text-gray-500 dark:text-gray-400">
-                          {step.description}
+                          Stage {stage.stage} - Progress: {stage.progress}%
                         </div>
                       </div>
                     </div>
                   </div>
                   
                   <div className="flex items-center space-x-3">
-                    {step.error && (
+                    {stage.error && (
                       <AlertCircle size={16} className="text-red-500" />
                     )}
                     <div className="text-xs text-gray-500 dark:text-gray-400">
-                      {getDuration(step)}
+                      {getDuration(stage)}
                     </div>
                     <div className={`w-2 h-2 rounded-full ${
-                      step.status === 'running' ? 'animate-pulse bg-blue-500' :
-                      step.status === 'completed' ? 'bg-green-500' :
-                      step.status === 'failed' ? 'bg-red-500' : 'bg-gray-400'
+                      stage.status === 'running' ? 'animate-pulse bg-blue-500' :
+                      stage.status === 'completed' ? 'bg-green-500' :
+                      stage.status === 'error' ? 'bg-red-500' : 'bg-gray-400'
                     }`} />
                   </div>
                 </div>
@@ -290,26 +290,25 @@ const SearchSteps: React.FC<SearchStepsProps> = ({
                 {/* Expanded Details */}
                 {isExpanded && (
                   <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600 space-y-3">
-                    {step.error && (
+                                        {stage.error && (
                       <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
                         <div className="flex items-center space-x-2">
                           <AlertCircle size={16} className="text-red-500" />
                           <span className="text-sm font-medium text-red-700 dark:text-red-400">Error</span>
                         </div>
-                        <p className="text-sm text-red-600 dark:text-red-300 mt-1">{step.error}</p>
+                        <p className="text-sm text-red-600 dark:text-red-300 mt-1">{stage.error}</p>
                       </div>
                     )}
                     
-                    {step.result && (
-                      <div className="p-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg">
-                        <div className="flex items-center space-x-2 mb-2">
-                          <FileText size={16} className="text-gray-500" />
-                          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Result</span>
+                    {stage.data && (
+                      <div className="p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                        <div className="mb-2">
+                          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Stage Data</span>
                         </div>
                         <p className="text-sm text-gray-600 dark:text-gray-400">
-                          {typeof step.result === 'string' 
-                            ? step.result.substring(0, 200) + (step.result.length > 200 ? '...' : '')
-                            : JSON.stringify(step.result).substring(0, 200) + '...'
+                          {typeof stage.data === 'string' 
+                            ? stage.data.substring(0, 200) + (stage.data.length > 200 ? '...' : '')
+                            : JSON.stringify(stage.data).substring(0, 200) + '...'
                           }
                         </p>
                       </div>
@@ -319,13 +318,13 @@ const SearchSteps: React.FC<SearchStepsProps> = ({
                       <div>
                         <span className="text-gray-500 dark:text-gray-400">Start Time:</span>
                         <div className="font-medium text-gray-700 dark:text-gray-300">
-                          {step.startTime ? new Date(step.startTime).toLocaleTimeString() : 'N/A'}
+                          {stage.startTime ? new Date(stage.startTime).toLocaleTimeString() : 'N/A'}
                         </div>
                       </div>
                       <div>
                         <span className="text-gray-500 dark:text-gray-400">End Time:</span>
                         <div className="font-medium text-gray-700 dark:text-gray-300">
-                          {step.endTime ? new Date(step.endTime).toLocaleTimeString() : 'N/A'}
+                          {stage.endTime ? new Date(stage.endTime).toLocaleTimeString() : 'N/A'}
                         </div>
                       </div>
                     </div>
@@ -338,7 +337,7 @@ const SearchSteps: React.FC<SearchStepsProps> = ({
       </div>
       
       {/* Footer Status */}
-      {runningSteps > 0 && (
+      {runningStages > 0 && (
         <div className={`p-4 bg-gradient-to-r ${modeConfig.bgGradient} border-t ${modeConfig.borderColor}`}>
           <div className="flex items-center space-x-3">
             <div className={`w-5 h-5 text-${modeConfig.color}-500 animate-spin`}>
@@ -346,7 +345,7 @@ const SearchSteps: React.FC<SearchStepsProps> = ({
             </div>
             <div className="flex-1">
               <div className={`text-sm font-medium ${modeConfig.textColor}`}>
-                {runningSteps} step{runningSteps > 1 ? 's' : ''} currently running
+                {runningStages} stage{runningStages > 1 ? 's' : ''} currently running
               </div>
               <div className="text-xs text-gray-600 dark:text-gray-400">
                 {progress?.message || 'Processing search operations...'}
@@ -369,13 +368,13 @@ const SearchSteps: React.FC<SearchStepsProps> = ({
         </div>
       )}
       
-      {failedSteps > 0 && (
+      {failedStages > 0 && (
         <div className="p-4 bg-red-50 dark:bg-red-900/20 border-t border-red-200 dark:border-red-800">
           <div className="flex items-center space-x-3">
             <AlertCircle size={20} className="text-red-500" />
             <div>
               <div className="text-sm font-medium text-red-700 dark:text-red-400">
-                {failedSteps} step{failedSteps > 1 ? 's' : ''} failed
+                {failedStages} stage{failedStages > 1 ? 's' : ''} failed
               </div>
               <div className="text-xs text-red-600 dark:text-red-300">
                 Some operations encountered errors

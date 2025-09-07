@@ -1125,10 +1125,9 @@ const Page = () => {
             <h1 className="text-3xl font-medium p-2">{t('settings.title')}</h1>
           </div>
         </div>
-        <hr className="border-t border-[#2B2C2C] my-4 w-full" />
       </div>
 
-      {isLoading ? (
+  {isLoading ? (
         <div className="flex flex-row items-center justify-center min-h-[50vh]">
           <svg
             aria-hidden="true"
@@ -1149,9 +1148,9 @@ const Page = () => {
         </div>
       ) : (
         config && (
-          <div className="flex gap-6">
-            {/* Left Sidebar */}
-            <div className="w-64 flex-shrink-0">
+          <div className="flex flex-col lg:flex-row gap-6">
+            {/* Left Sidebar (hidden on small screens) */}
+            <div className="w-64 flex-shrink-0 hidden lg:block">
               <div className="bg-light-secondary/30 dark:bg-dark-secondary/30 rounded-xl border border-light-200 dark:border-dark-200 p-2">
                 <nav className="space-y-1">
                   {tabs.map((tab) => {
@@ -1177,6 +1176,31 @@ const Page = () => {
                     );
                   })}
                 </nav>
+              </div>
+            </div>
+
+            {/* Mobile tab bar (visible on small screens) - chip style that wraps to new lines */}
+            <div className="lg:hidden w-full mb-4">
+              <div className="flex flex-wrap gap-2 pb-2">
+                {tabs.map((tab) => {
+                  const Icon = tab.icon;
+                  const isActive = activeTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveTab(tab.id)}
+                      className={cn(
+                        'flex items-center space-x-2 px-3 py-2 rounded-full text-sm font-medium',
+                        isActive
+                          ? 'bg-[#24A0ED] text-white shadow-sm'
+                          : 'text-black/70 dark:text-white/70 bg-light-secondary/60 dark:bg-dark-secondary/60 hover:bg-light-200 dark:hover:bg-dark-200 hover:text-black/90 dark:hover:text-white/90'
+                      )}
+                    >
+                      <Icon size={16} className={isActive ? 'text-white' : 'text-black/60 dark:text-white/60'} />
+                      <span>{tab.label}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 

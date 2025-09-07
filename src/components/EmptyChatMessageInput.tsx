@@ -10,6 +10,7 @@ import Microphone from './MessageInputActions/Microphone';
 import { File } from './ChatWindow';
 import axios from 'axios';
 import { useTranslation } from '@/hooks/useTranslation';
+import { useDebounce } from '@/hooks/useDebounce';
 
 const EmptyChatMessageInput = ({
   sendMessage,
@@ -35,9 +36,28 @@ const EmptyChatMessageInput = ({
   const [message, setMessage] = useState('');
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const suggestionTimeout = useRef<NodeJS.Timeout | null>(null);
 
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const fetchSuggestions = useCallback(async (q: string) => {
+    if (!q.trim()) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+    try {
+      const url = `/api/searxng?format=json&q=${encodeURIComponent(q)}`;
+      const res = await axios.get(url);
+      setSuggestions(res.data.suggestions || []);
+      setShowSuggestions(true);
+    } catch {
+      setSuggestions([]);
+      setShowSuggestions(false);
+    }
+  }, []);
+
+  // Debounced version of fetchSuggestions with 300ms delay
+  const debouncedFetchSuggestions = useDebounce(fetchSuggestions, 300);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -60,31 +80,17 @@ const EmptyChatMessageInput = ({
 
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
+      // Cancel any pending debounced calls when component unmounts
+      debouncedFetchSuggestions.cancel();
     };
-  }, []);
-
-  const fetchSuggestions = useCallback(async (q: string) => {
-    if (!q.trim()) {
-      setSuggestions([]);
-      return;
-    }
-    try {
-      const url = `/api/searxng?format=json&q=${encodeURIComponent(q)}`;
-      const res = await axios.get(url);
-      setSuggestions(res.data.suggestions || []);
-    } catch {
-      setSuggestions([]);
-    }
-  }, []);
+  }, [debouncedFetchSuggestions]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setMessage(e.target.value);
-    if (suggestionTimeout.current) clearTimeout(suggestionTimeout.current);
     const value = e.target.value;
-    suggestionTimeout.current = setTimeout(() => {
-      fetchSuggestions(value);
-      setShowSuggestions(!!value);
-    }, 150);
+    setMessage(value);
+    
+    // Use debounced function to fetch suggestions
+    debouncedFetchSuggestions(value);
   };
 
   return (
@@ -111,26 +117,30 @@ const EmptyChatMessageInput = ({
           onFocus={() => setShowSuggestions(!!message)}
           onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
           minRows={2}
-          className="bg-transparent placeholder:text-black/50 dark:placeholder:text-white/50 text-sm text-black dark:text-white resize-none focus:outline-none w-full max-h-24 lg:max-h-36 xl:max-h-48"
+          className="bg-transparent text-foreground placeholder:text-muted-foreground placeholder:opacity-80 dark:placeholder:opacity-60 text-sm text-foreground dark:text-foreground resize-none focus:outline-none w-full max-h-24 lg:max-h-36 xl:max-h-48"
           placeholder={t('emptyChat.askAnything')}
         />
         {showSuggestions && suggestions.length > 0 && (
-          <div className="absolute z-50 top-full left-0 right-0 mt-2 bg-dark-secondary border border-dark-200 rounded-lg shadow-xl overflow-hidden">
-            {suggestions.map((s, i) => (
-              <div
-                key={i}
-                className="flex items-center px-4 py-3 text-white hover:bg-[#24A0ED]/10 cursor-pointer text-sm border-b border-dark-200 last:border-b-0 transition-colors duration-150"
-                onMouseDown={() => {
-                  setMessage(s);
-                  setShowSuggestions(false);
-                }}
-              >
-                <svg className="w-4 h-4 mr-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                {s}
-              </div>
-            ))}
+          <div className="absolute z-50 top-full left-0 right-0 mt-2 w-full rounded-md bg-popover text-popover-foreground shadow-md border border-popover/50 overflow-hidden">
+            <div className="w-full divide-y">
+              {suggestions.map((s, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onMouseDown={() => {
+                    // use onMouseDown to avoid losing focus before click
+                    setMessage(s);
+                    setShowSuggestions(false);
+                  }}
+                  className="flex w-full items-center gap-3 px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors duration-150"
+                >
+                  <svg className="w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <span className="truncate">{s}</span>
+                </button>
+              ))}
+            </div>
           </div>
         )}
         <div className="flex flex-row items-center justify-between mt-4">
@@ -154,7 +164,7 @@ const EmptyChatMessageInput = ({
             />
             <button
               disabled={message.trim().length === 0}
-              className="bg-[#24A0ED] text-white disabled:text-black/50 dark:disabled:text-white/50 disabled:bg-[#e0e0dc] dark:disabled:bg-[#ececec21] hover:bg-opacity-85 transition duration-100 rounded-full p-2"
+              className="bg-[#24A0ED] text-white hover:bg-opacity-85 transition duration-100 rounded-full p-2 disabled:opacity-60 disabled:cursor-not-allowed"
             >
               <ArrowRight className="bg-background" size={17} />
             </button>

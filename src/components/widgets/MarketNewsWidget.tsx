@@ -8,7 +8,8 @@ interface MarketNews {
   description: string;
   url: string;
   publishedAt: string;
-  source: string;
+  // API sometimes returns a source object { name, domain, credibility }
+  source: string | { name: string; domain?: string; credibility?: string };
   sentiment?: 'positive' | 'negative' | 'neutral';
 }
 
@@ -164,7 +165,9 @@ const MarketNewsWidget: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
                     <span className="text-xs text-black/50 dark:text-white/50">
-                      {item.source}
+                      {typeof item.source === 'string'
+                        ? item.source
+                        : item.source?.name || item.source?.domain || 'Unknown Source'}
                     </span>
                     {item.sentiment && (
                       <div className={`flex items-center space-x-1 text-xs ${getSentimentColor(item.sentiment)}`}>

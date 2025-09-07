@@ -1,7 +1,13 @@
 'use client';
 import { useTheme } from 'next-themes';
 import { useCallback, useEffect, useState } from 'react';
-import Select from '../ui/Select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../ui/select';
 
 type Theme = 'dark' | 'light' | 'system';
 
@@ -45,15 +51,15 @@ const ThemeSwitcher = ({ className }: { className?: string }) => {
   }
 
   return (
-    <Select
-      className={className}
-      value={theme}
-      onChange={(e) => handleThemeSwitch(e.target.value as Theme)}
-      options={[
-        { value: 'light', label: 'Light' },
-        { value: 'dark', label: 'Dark' },
-      ]}
-    />
+    <Select value={theme} onValueChange={(value) => handleThemeSwitch(value as Theme)}>
+      <SelectTrigger className={className}>
+        <SelectValue placeholder="Select theme" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="light">Light</SelectItem>
+        <SelectItem value="dark">Dark</SelectItem>
+      </SelectContent>
+    </Select>
   );
 };
 

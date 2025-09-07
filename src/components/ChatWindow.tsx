@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Document } from '@langchain/core/documents';
+import { PipelineStage } from '@/lib/search/orchestrator';
 import Navbar from './Navbar';
 import Chat from './Chat';
 import EmptyChat from './EmptyChat';
@@ -54,6 +55,10 @@ export type Message = {
   
   currentStep?: string;
   steps?: string[];
+  
+  // Q-S-R-E-D Pipeline stages  
+  pipelineStages?: PipelineStage[];
+  
   // Orchestrator data
   orchestratorSteps?: any[];
   orchestratorPlan?: any;
@@ -270,6 +275,12 @@ const loadMessages = async (
       ...JSON.parse(msg.metadata),
     };
   }) as Message[];
+
+  // Ensure messages are properly sorted by createdAt
+  messages.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  
+  // Debug logging to check message order
+  console.log('Loaded messages order:', messages.map(m => ({ role: m.role, content: m.content.substring(0, 50), createdAt: m.createdAt })));
 
   setMessages(messages);
 
@@ -658,9 +669,11 @@ const ChatWindow = ({ id }: { id?: string }) => {
 
       // Handle unified search results - images
       if (data.type === 'images') {
+        console.log('🖼️ ChatWindow: Received images data:', data.data?.length || 0, 'images');
         setMessages((prevMessages) =>
           prevMessages.map((msg) => {
             if (msg.messageId === data.messageId) {
+              console.log('🖼️ ChatWindow: Updating message with images:', data.data?.length || 0);
               return {
                 ...msg,
                 images: data.data,
@@ -674,9 +687,11 @@ const ChatWindow = ({ id }: { id?: string }) => {
 
       // Handle unified search results - videos
       if (data.type === 'videos') {
+        console.log('🎥 ChatWindow: Received videos data:', data.data?.length || 0, 'videos');
         setMessages((prevMessages) =>
           prevMessages.map((msg) => {
             if (msg.messageId === data.messageId) {
+              console.log('🎥 ChatWindow: Updating message with videos:', data.data?.length || 0);
               return {
                 ...msg,
                 videos: data.data,
@@ -704,8 +719,227 @@ const ChatWindow = ({ id }: { id?: string }) => {
         setMessageAppeared(true);
       }
 
-      if (data.type === 'message') {
+      // Handle stage completion events
+      if (data.type === 'stage_complete') {
+        setMessages((prevMessages) =>
+          prevMessages.map((msg) => {
+            if (msg.messageId === data.messageId) {
+              const updatedStages = msg.pipelineStages?.map(stage => 
+                stage.stage === data.data.stage 
+                  ? { ...stage, status: 'completed' as const, progress: 100 } 
+                  : stage
+              ) || [];
+              
+              return {
+                ...msg,
+                pipelineStages: updatedStages,
+                isOrchestrator: true,
+              };
+            }
+            return msg;
+          })
+        );
+        setMessageAppeared(true);
+      }
+
+      // Handle pipeline progress updates
+      if (data.type === 'pipeline_progress') {
+        setMessages((prevMessages) =>
+          prevMessages.map((msg) => {
+            if (msg.messageId === data.messageId) {
+              const updatedStages = msg.pipelineStages?.map(stage => 
+                stage.stage === data.data.stage 
+                  ? { ...stage, status: 'running' as const, progress: data.data.progress || 0 } 
+                  : stage
+              ) || [];
+              
+              return {
+                ...msg,
+                pipelineStages: updatedStages,
+                isOrchestrator: true,
+                progress: {
+                  step: data.data.stage,
+                  message: `${data.data.stage} Pipeline: ${data.data.progress || 0}%`,
+                  details: `Processing stage ${data.data.stage}`,
+                  progress: data.data.progress || 0,
+                },
+              };
+            }
+            return msg;
+          })
+        );
+        setMessageAppeared(true);
+      }
+
+      // Handle search completion
+      if (data.type === 'search_complete') {
+        completedSteps.push('complete');
+        
+        setMessages((prevMessages) =>
+          prevMessages.map((msg) => {
+            if (msg.messageId === data.messageId) {
+              return {
+                ...msg,
+                currentStep: 'complete',
+                steps: [...(msg.steps || []), 'complete'],
+                progress: {
+                  step: 'complete',
+                  message: 'Search completed',
+                  details: `Execution time: ${data.data?.executionTime || 0}ms`,
+                  progress: 100,
+                },
+              };
+            }
+            return msg;
+          })
+        );
+        setMessageAppeared(true);
+      }
+
+      // Handle Q-S-R-E-D Pipeline events
+      if (data.type === 'pipeline_status') {
+        setMessages((prevMessages) =>
+          prevMessages.map((msg) => {
+            if (msg.messageId === data.messageId) {
+              return {
+                ...msg,
+                pipelineStages: data.data.stages,
+                isOrchestrator: true,
+                progress: {
+                  step: data.data.currentStage || 'pipeline',
+                  message: `Pipeline Progress: ${data.data.overallProgress || 0}%`,
+                  details: `${data.data.activeStages || 0} active stages`,
+                  progress: data.data.overallProgress || 0,
+                },
+              };
+            }
+            return msg;
+          })
+        );
+        setMessageAppeared(true);
+      }
+
+      if (data.type === 'stage_update') {
+        setMessages((prevMessages) =>
+          prevMessages.map((msg) => {
+            if (msg.messageId === data.messageId) {
+              const updatedStages = msg.pipelineStages?.map(stage => 
+                stage.stage === data.data.stage 
+                  ? { ...stage, ...data.data } 
+                  : stage
+              ) || [];
+              
+              return {
+                ...msg,
+                pipelineStages: updatedStages,
+                isOrchestrator: true,
+                progress: {
+                  step: data.data.stage,
+                  message: data.data.status === 'running' 
+                    ? `${data.data.name}: ${data.data.description}`
+                    : data.data.status === 'completed'
+                    ? `${data.data.name}: Completed`
+                    : `${data.data.name}: ${data.data.status}`,
+                  details: data.data.error || '',
+                  progress: data.data.progress || 0,
+                },
+              };
+            }
+            return msg;
+          })
+        );
+        setMessageAppeared(true);
+      }
+
+      if (data.type === 'qsred_pipeline_init') {
+        // Initialize message with empty pipeline stages for Q-S-R-E-D
+        const initialStages = [
+          {
+            stage: 'Q' as const,
+            name: 'Query Understanding',
+            description: 'Analyzing query intent and context',
+            status: 'pending' as const,
+            progress: 0,
+          },
+          {
+            stage: 'S' as const,
+            name: 'Search Execution',
+            description: 'Retrieving relevant documents',
+            status: 'pending' as const,
+            progress: 0,
+          },
+          {
+            stage: 'R' as const,
+            name: 'Ranking & Relevance',
+            description: 'Neural reranking and relevance scoring',
+            status: 'pending' as const,
+            progress: 0,
+          },
+          {
+            stage: 'E' as const,
+            name: 'Content Extraction',
+            description: 'Extracting and processing key information',
+            status: 'pending' as const,
+            progress: 0,
+          },
+          {
+            stage: 'D' as const,
+            name: 'Response Delivery',
+            description: 'Generating and streaming final response',
+            status: 'pending' as const,
+            progress: 0,
+          },
+        ];
+
         if (!added) {
+          setMessages((prevMessages) => [
+            ...prevMessages,
+            {
+              content: '',
+              messageId: data.messageId || `msg_${Date.now()}`,
+              chatId: chatId!,
+              role: 'assistant',
+              pipelineStages: initialStages,
+              isOrchestrator: true,
+              sources: [],
+              progress: {
+                step: 'pipeline_init',
+                message: 'Q-S-R-E-D Pipeline initialized',
+                details: data.data?.mode || 'quick',
+                progress: 0,
+              },
+              createdAt: new Date(),
+            },
+          ]);
+          added = true;
+        }
+        setMessageAppeared(true);
+      }
+
+      if (data.type === 'qsred_pipeline_done') {
+        setMessages((prevMessages) =>
+          prevMessages.map((msg) => {
+            if (msg.messageId === data.messageId) {
+              return {
+                ...msg,
+                progress: {
+                  step: 'complete',
+                  message: 'Q-S-R-E-D Pipeline completed',
+                  details: `Mode: ${data.data?.mode || 'quick'}`,
+                  progress: 100,
+                },
+              };
+            }
+            return msg;
+          })
+        );
+      }
+
+      if (data.type === 'message') {
+        console.log('📝 ChatWindow: Received message data, length:', data.data?.length || 0, 'isComplete:', data.isComplete, 'messageId:', data.messageId);
+        
+        if (!added) {
+          console.log('📝 ChatWindow: Creating new assistant message');
           setMessages((prevMessages) => [
             ...prevMessages,
             {
@@ -721,22 +955,38 @@ const ChatWindow = ({ id }: { id?: string }) => {
           ]);
           added = true;
           recievedMessage = data.data;
-        } else if (!data.isComplete) {
-          // Only append if this is NOT a complete response (streaming)
-          setMessages((prev) =>
-            prev.map((message) => {
-              if (message.messageId === data.messageId) {
-                return { ...message, content: message.content + data.data };
+        } else {
+          // Update the existing message with the final content
+          console.log('📝 ChatWindow: Updating existing message, preserving images/videos/sources');
+          setMessages((prevMessages) =>
+            prevMessages.map((msg) => {
+              if (msg.messageId === data.messageId) {
+                console.log('📝 ChatWindow: Current message state - images:', msg.images?.length || 0, 'videos:', msg.videos?.length || 0, 'sources:', msg.sources?.length || 0);
+                // If this is a complete response or if content is being replaced entirely
+                const finalContent = data.isComplete ? data.data : (msg.content + data.data);
+                return { 
+                  ...msg, 
+                  content: finalContent,
+                  // Ensure all collected data is preserved
+                  sources: sources || msg.sources,
+                  images: msg.images,
+                  videos: msg.videos,
+                  searchIntent: msg.searchIntent,
+                  pipelineStages: msg.pipelineStages,
+                  isOrchestrator: msg.isOrchestrator,
+                };
               }
-              return message;
-            }),
+              return msg;
+            })
           );
-          recievedMessage += data.data;
+          recievedMessage = data.isComplete ? data.data : recievedMessage + data.data;
         }
         setMessageAppeared(true);
       }
 
       if (data.type === 'messageEnd') {
+        console.log('🏁 ChatWindow: Message ended, messageId:', data.messageId);
+        
         setChatHistory((prevHistory) => [
           ...prevHistory,
           ['human', message],
@@ -745,40 +995,55 @@ const ChatWindow = ({ id }: { id?: string }) => {
 
         setLoading(false);
 
-        const lastMsg = messagesRef.current[messagesRef.current.length - 1];
+        // Get the current messages to find the last one
+        const currentMessages = messagesRef.current;
+        const lastMsg = currentMessages[currentMessages.length - 1];
+        
+        console.log('🏁 ChatWindow: Last message state - content:', lastMsg?.content?.length || 0, 'chars, images:', lastMsg?.images?.length || 0, 'videos:', lastMsg?.videos?.length || 0, 'sources:', lastMsg?.sources?.length || 0);
 
         // Mark all steps as completed
         setMessages((prevMessages) =>
           prevMessages.map((msg) => {
-            if (msg.messageId === lastMsg.messageId) {
+            if (msg.messageId === data.messageId || msg.messageId === lastMsg?.messageId) {
               return {
                 ...msg,
                 currentStep: 'complete',
                 steps: ['search', 'refine', 'read', 'generate', 'complete'],
+                // Ensure final message has all the collected data
+                sources: sources || msg.sources,
+                content: recievedMessage || msg.content,
               };
             }
             return msg;
           })
         );
 
-        // Auto-search functionality is now handled by the tabbed interface
-        // Images and videos are automatically loaded when their respective tabs are opened
-
+        // Generate suggestions for assistant messages with sources
         if (
-          lastMsg.role === 'assistant' &&
-          lastMsg.sources &&
-          lastMsg.sources.length > 0 &&
+          lastMsg?.role === 'assistant' &&
+          ((lastMsg.sources && lastMsg.sources.length > 0) || (sources && sources.length > 0)) &&
           !lastMsg.suggestions
         ) {
-          const suggestions = await getSuggestions(messagesRef.current);
-          setMessages((prev) =>
-            prev.map((msg) => {
-              if (msg.messageId === lastMsg.messageId) {
-                return { ...msg, suggestions: suggestions };
-              }
-              return msg;
-            }),
-          );
+          console.log('🤔 ChatWindow: Generating suggestions for message with sources');
+          // Use setTimeout to ensure the message state is updated first
+          setTimeout(async () => {
+            try {
+              const suggestions = await getSuggestions(messagesRef.current);
+              console.log('🤔 ChatWindow: Generated', suggestions?.length || 0, 'suggestions');
+              setMessages((prev) =>
+                prev.map((msg) => {
+                  if (msg.messageId === data.messageId || msg.messageId === lastMsg?.messageId) {
+                    return { ...msg, suggestions: suggestions };
+                  }
+                  return msg;
+                }),
+              );
+            } catch (error) {
+              console.error('Failed to get suggestions:', error);
+            }
+          }, 100);
+        } else {
+          console.log('🤔 ChatWindow: Not generating suggestions - role:', lastMsg?.role, 'sources:', (lastMsg?.sources?.length || 0), 'existing suggestions:', !!lastMsg?.suggestions);
         }
       }
     };
