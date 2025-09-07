@@ -2,48 +2,117 @@ import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { HumanMessage } from '@langchain/core/messages';
 
 export interface SearchIntent {
+  // Search Strategy - determines how to approach the search
+  strategy: 'quickAnswer' | 'research' | 'comparison' | 'tutorial' | 'news' | 'reference' | 'creative';
+  
+  // Query Complexity - determines search depth and resource allocation
+  complexity: 'simple' | 'medium' | 'complex';
+  
+  // Temporal Requirements - determines freshness and time-based filtering
+  temporal: 'current' | 'historical' | 'trending' | 'timeless';
+  
+  // Content Preferences - secondary to strategy, used for result enhancement
+  contentPreferences: {
+    needsImages: boolean;
+    needsVideos: boolean;
+    mediaImportance: 'low' | 'medium' | 'high';
+    visualLearning: boolean;
+  };
+  
+  // Confidence scores for each dimension
+  confidence: {
+    strategy: number;
+    complexity: number;
+    temporal: number;
+    contentPreferences: number;
+  };
+  
+  // Reasoning and recommendations for orchestrator
+  reasoning: string;
+  recommendations: {
+    searchQueries: number; // How many search queries to generate
+    searchDepth: 'shallow' | 'medium' | 'deep';
+    parallelization: boolean;
+    earlyTermination: boolean;
+    relevanceThreshold: number;
+    timeoutMultiplier: number; // Adjust timeouts based on complexity
+  };
+  
+  // Legacy compatibility (will be removed)
+  primaryIntent: 'documents' | 'images' | 'videos' | 'mixed';
   needsImages: boolean;
   needsVideos: boolean;
-  confidence: {
-    images: number;
-    videos: number;
-  };
-  reasoning: string;
-  primaryIntent: 'documents' | 'images' | 'videos' | 'mixed';
 }
 
 export class IntentDetector {
-  private static readonly INTENT_DETECTION_PROMPT = `You are an intelligent search intent analyzer. Analyze the user query and determine what types of content would be most helpful.
+  private static readonly INTENT_DETECTION_PROMPT = `You are an advanced search intent analyzer. Analyze the user query comprehensively across multiple dimensions to determine the optimal search strategy.
 
-Consider these factors:
-- **Text/Documents**: General information, research, explanations, analysis, news, facts
-- **Images**: Visual content, photos, diagrams, charts, artwork, screenshots, examples
-- **Videos**: Tutorials, demonstrations, entertainment, lectures, reviews, how-to content
+ANALYSIS DIMENSIONS:
+
+1. **SEARCH STRATEGY** (determines approach):
+   - quickAnswer: Simple factual queries, definitions, basic questions
+   - research: Deep investigative queries, complex topics, academic research
+   - comparison: Comparing products, concepts, options ("X vs Y", "best X")  
+   - tutorial: Learning, how-to guides, step-by-step instructions
+   - news: Current events, breaking news, recent developments
+   - reference: Technical specs, documentation, detailed information
+   - creative: Brainstorming, inspiration, creative ideas
+
+2. **QUERY COMPLEXITY** (determines depth):
+   - simple: Single concept, clear question, basic information need
+   - medium: Multiple related concepts, requires synthesis
+   - complex: Multi-faceted, ambiguous, requires deep exploration
+
+3. **TEMPORAL REQUIREMENTS** (determines freshness needs):
+   - current: Latest information, real-time data, breaking news
+   - historical: Past events, archived information, timeline data
+   - trending: Popular recent content, viral information
+   - timeless: General knowledge, concepts that don't change
+
+4. **CONTENT PREFERENCES** (enhances results):
+   - Visual learning indicators (charts, diagrams helpful)
+   - Media importance (videos crucial vs supplementary)
+   - Image necessity (visual content primary vs secondary)
 
 Query: "{query}"
 
-Respond with a JSON object containing:
+Respond with valid JSON:
 {
-  "needsImages": boolean,
-  "needsVideos": boolean,
-  "confidence": {
-    "images": number (0-1),
-    "videos": number (0-1)
+  "strategy": "quickAnswer|research|comparison|tutorial|news|reference|creative",
+  "complexity": "simple|medium|complex", 
+  "temporal": "current|historical|trending|timeless",
+  "contentPreferences": {
+    "needsImages": boolean,
+    "needsVideos": boolean,
+    "mediaImportance": "low|medium|high",
+    "visualLearning": boolean
   },
-  "reasoning": "Brief explanation of your analysis",
-  "primaryIntent": "documents" | "images" | "videos" | "mixed"
+  "confidence": {
+    "strategy": number (0-1),
+    "complexity": number (0-1),
+    "temporal": number (0-1),
+    "contentPreferences": number (0-1)
+  },
+  "reasoning": "Brief analysis explanation",
+  "recommendations": {
+    "searchQueries": number (1-6),
+    "searchDepth": "shallow|medium|deep",
+    "parallelization": boolean,
+    "earlyTermination": boolean,
+    "relevanceThreshold": number (0.2-0.8),
+    "timeoutMultiplier": number (0.5-2.0)
+  }
 }
 
 Examples:
-- "How to bake a chocolate cake" → needs images and videos (visual guide and demonstration)
-- "Latest news about climate change" → some images for charts/graphs
-- "Show me pictures of golden retrievers" → primarily images
-- "Tutorial on React hooks" → videos (tutorials are often video-based)
-- "What is quantum computing" → some images for diagrams
-- "Give me image of Tanmay Bhat" → primarily images
-- "Who is Tanmay Bhat" → images (person info benefits from photos)
+- "What is quantum computing" → quickAnswer, simple, timeless, low media
+- "How to bake chocolate cake" → tutorial, medium, timeless, high media (visual learning)
+- "iPhone 15 vs Samsung Galaxy S24" → comparison, medium, current, medium media
+- "Latest AI developments 2024" → news, medium, current, medium media
+- "Climate change research papers" → research, complex, current, low media
+- "Show me Eiffel Tower photos" → reference, simple, timeless, high media (images primary)
 
-Analyze the query and respond with valid JSON only.`;
+Analyze and respond with valid JSON only.`;
 
   constructor(private llm: BaseChatModel) {}
 
@@ -81,20 +150,39 @@ Analyze the query and respond with valid JSON only.`;
       const intent = JSON.parse(jsonMatch[0]);
       
       // Validate the response structure
-      if (typeof intent.needsImages !== 'boolean' ||
-          typeof intent.needsVideos !== 'boolean') {
-        throw new Error('Invalid response structure');
+      if (!intent.strategy || !intent.complexity || !intent.temporal || !intent.contentPreferences) {
+        throw new Error('Invalid intent structure');
       }
 
       return {
-        needsImages: intent.needsImages,
-        needsVideos: intent.needsVideos,
-        confidence: {
-          images: intent.confidence?.images || 0.5,
-          videos: intent.confidence?.videos || 0.5
+        strategy: intent.strategy,
+        complexity: intent.complexity,
+        temporal: intent.temporal,
+        contentPreferences: {
+          needsImages: intent.contentPreferences.needsImages || false,
+          needsVideos: intent.contentPreferences.needsVideos || false,
+          mediaImportance: intent.contentPreferences.mediaImportance || 'low',
+          visualLearning: intent.contentPreferences.visualLearning || false,
         },
-        reasoning: intent.reasoning || 'LLM-based analysis',
-        primaryIntent: intent.primaryIntent || 'mixed'
+        confidence: {
+          strategy: intent.confidence?.strategy || 0.7,
+          complexity: intent.confidence?.complexity || 0.7,
+          temporal: intent.confidence?.temporal || 0.7,
+          contentPreferences: intent.confidence?.contentPreferences || 0.7,
+        },
+        reasoning: intent.reasoning || 'LLM-based comprehensive analysis',
+        recommendations: {
+          searchQueries: Math.min(Math.max(intent.recommendations?.searchQueries || 3, 1), 6),
+          searchDepth: intent.recommendations?.searchDepth || 'medium',
+          parallelization: intent.recommendations?.parallelization !== false,
+          earlyTermination: intent.recommendations?.earlyTermination !== false,
+          relevanceThreshold: Math.min(Math.max(intent.recommendations?.relevanceThreshold || 0.4, 0.2), 0.8),
+          timeoutMultiplier: Math.min(Math.max(intent.recommendations?.timeoutMultiplier || 1.0, 0.5), 2.0),
+        },
+        // Legacy compatibility
+        primaryIntent: this.mapToPrimaryIntent(intent.strategy, intent.contentPreferences),
+        needsImages: intent.contentPreferences.needsImages || false,
+        needsVideos: intent.contentPreferences.needsVideos || false,
       };
     } catch (error) {
       console.error('Error parsing LLM intent response:', error);
@@ -102,98 +190,136 @@ Analyze the query and respond with valid JSON only.`;
     }
   }
 
+  private mapToPrimaryIntent(strategy: string, contentPreferences: any): 'documents' | 'images' | 'videos' | 'mixed' {
+    if (contentPreferences.mediaImportance === 'high') {
+      if (contentPreferences.needsImages && contentPreferences.needsVideos) return 'mixed';
+      if (contentPreferences.needsImages) return 'images';
+      if (contentPreferences.needsVideos) return 'videos';
+    }
+    
+    // Strategy-based mapping
+    if (strategy === 'tutorial' && contentPreferences.visualLearning) return 'mixed';
+    if (strategy === 'reference' && contentPreferences.needsImages) return 'images';
+    
+    return 'documents';
+  }
+
   static getQuickIntent(query: string): SearchIntent {
     const queryLower = query.toLowerCase();
     
-    // Enhanced keyword sets for better detection
-    const imageKeywords = [
-      'image', 'images', 'picture', 'pictures', 'photo', 'photos', 'pic', 'pics',
-      'show me', 'visual', 'see', 'look', 'appearance', 'diagram', 'chart',
-      'screenshot', 'artwork', 'gallery', 'visualization', 'infographic',
-      'portrait', 'face', 'looks like', 'what does', 'appearance of'
-    ];
+    // Strategy detection keywords
+    const strategyKeywords = {
+      quickAnswer: ['what is', 'define', 'explain', 'definition', 'meaning'],
+      research: ['research', 'study', 'analysis', 'comprehensive', 'detailed', 'academic'],
+      comparison: ['vs', 'versus', 'compare', 'comparison', 'difference', 'better', 'best'],
+      tutorial: ['how to', 'tutorial', 'guide', 'step', 'learn', 'teach', 'instructions'],
+      news: ['news', 'latest', 'recent', 'breaking', 'update', 'current events', 'today'],
+      reference: ['specs', 'specification', 'documentation', 'manual', 'technical', 'details'],
+      creative: ['ideas', 'inspiration', 'creative', 'brainstorm', 'suggest', 'examples']
+    };
     
-    const videoKeywords = [
-      'video', 'videos', 'watch', 'tutorial', 'how to', 'demonstration',
-      'lesson', 'course', 'lecture', 'review', 'gameplay', 'movie',
-      'documentary', 'interview', 'presentation', 'webinar', 'stream',
-      'clip', 'footage', 'recording', 'show me how', 'teach me'
-    ];
+    // Complexity detection
+    const complexityIndicators = {
+      simple: queryLower.split(' ').length < 4,
+      complex: queryLower.includes('and') || queryLower.includes('or') || queryLower.includes('but') || 
+               queryLower.split(' ').length > 8
+    };
     
-    const documentKeywords = [
-      'what is', 'explain', 'definition', 'research', 'study', 'analysis',
-      'news', 'article', 'report', 'statistics', 'facts', 'information',
-      'compare', 'vs', 'versus', 'difference', 'history', 'timeline',
-      'who is', 'biography', 'background', 'details', 'about'
-    ];
-
-    let imageScore = 0;
-    let videoScore = 0;
-    let documentScore = 0;
-
-    // Calculate scores based on keyword matches
-    imageKeywords.forEach(keyword => {
-      if (queryLower.includes(keyword)) {
-        imageScore += 1;
-        // Give extra weight to explicit image requests
-        if (['image', 'images', 'picture', 'pictures', 'photo', 'photos', 'show me'].includes(keyword)) {
-          imageScore += 1;
-        }
+    // Temporal detection
+    const temporalKeywords = {
+      current: ['latest', 'recent', 'now', 'today', '2024', '2025', 'current', 'new'],
+      historical: ['history', 'past', 'historical', 'ancient', 'old', 'traditional'],
+      trending: ['trending', 'viral', 'popular', 'hot', 'buzz'],
+    };
+    
+    // Content preference detection
+    const imageKeywords = ['image', 'picture', 'photo', 'visual', 'show me', 'looks like', 'appearance'];
+    const videoKeywords = ['video', 'watch', 'tutorial', 'demonstration', 'movie', 'clip'];
+    const visualLearningKeywords = ['how to', 'tutorial', 'guide', 'demonstration', 'example'];
+    
+    // Determine strategy
+    let strategy: SearchIntent['strategy'] = 'quickAnswer';
+    let strategyScore = 0;
+    
+    Object.entries(strategyKeywords).forEach(([key, keywords]) => {
+      const score = keywords.filter(keyword => queryLower.includes(keyword)).length;
+      if (score > strategyScore) {
+        strategy = key as SearchIntent['strategy'];
+        strategyScore = score;
       }
     });
     
-    videoKeywords.forEach(keyword => {
-      if (queryLower.includes(keyword)) {
-        videoScore += 1;
-        // Give extra weight to explicit video requests
-        if (['video', 'videos', 'tutorial', 'how to', 'watch'].includes(keyword)) {
-          videoScore += 1;
-        }
+    // Determine complexity
+    let complexity: SearchIntent['complexity'] = 'medium';
+    if (complexityIndicators.simple) complexity = 'simple';
+    else if (complexityIndicators.complex) complexity = 'complex';
+    
+    // Determine temporal requirement
+    let temporal: SearchIntent['temporal'] = 'timeless';
+    let temporalScore = 0;
+    
+    Object.entries(temporalKeywords).forEach(([key, keywords]) => {
+      const score = keywords.filter(keyword => queryLower.includes(keyword)).length;
+      if (score > temporalScore) {
+        temporal = key as SearchIntent['temporal'];
+        temporalScore = score;
       }
     });
     
-    documentKeywords.forEach(keyword => {
-      if (queryLower.includes(keyword)) documentScore += 1;
-    });
-
-    // Special handling for person queries - they often benefit from images
-    const personKeywords = ['who is', 'biography', 'about'];
-    const isPersonQuery = personKeywords.some(keyword => queryLower.includes(keyword));
-    if (isPersonQuery) {
-      imageScore += 1; // Boost image score for person queries
+    // Determine content preferences
+    const needsImages = imageKeywords.some(keyword => queryLower.includes(keyword));
+    const needsVideos = videoKeywords.some(keyword => queryLower.includes(keyword));
+    const visualLearning = visualLearningKeywords.some(keyword => queryLower.includes(keyword));
+    
+    let mediaImportance: 'low' | 'medium' | 'high' = 'low';
+    if (needsImages || needsVideos) mediaImportance = 'medium';
+    if (visualLearning) mediaImportance = 'high';
+    
+    // Check if strategy is tutorial-related
+    const tutorialStrategies: SearchIntent['strategy'][] = ['tutorial'];
+    if (tutorialStrategies.includes(strategy)) {
+      mediaImportance = 'high';
     }
-
-    // Normalize scores
-    const maxScore = Math.max(imageScore, videoScore, documentScore, 1);
-    const imageConfidence = Math.min(imageScore / maxScore, 1);
-    const videoConfidence = Math.min(videoScore / maxScore, 1);
-    const documentConfidence = Math.min(documentScore / maxScore, 1);
-
-    // Determine what's needed based on confidence thresholds
-    const needsImages = imageConfidence > 0.3;
-    const needsVideos = videoConfidence > 0.3;
-
-    let primaryIntent: SearchIntent['primaryIntent'] = 'documents';
-    if (imageConfidence > videoConfidence && imageConfidence > documentConfidence) {
-      primaryIntent = 'images';
-    } else if (videoConfidence > documentConfidence && videoConfidence > imageConfidence) {
-      primaryIntent = 'videos';
-    } else if (imageConfidence > 0.3 || videoConfidence > 0.3) {
-      primaryIntent = 'mixed';
-    }
-
-    const reasoning = `Heuristic analysis: image keywords (${imageScore}), video keywords (${videoScore}), document keywords (${documentScore})`;
-
+    
+    // Generate recommendations based on analysis
+    const recommendations = {
+      searchQueries: complexity === 'simple' ? 2 : complexity === 'medium' ? 3 : 4,
+      searchDepth: complexity === 'simple' ? 'shallow' as const : 
+                  complexity === 'medium' ? 'medium' as const : 'deep' as const,
+      parallelization: true,
+      earlyTermination: strategy === 'quickAnswer' && complexity === 'simple',
+      relevanceThreshold: strategy === 'quickAnswer' ? 0.5 : 
+                         strategy === 'research' ? 0.3 : 0.4,
+      timeoutMultiplier: complexity === 'simple' ? 0.8 : 
+                        complexity === 'complex' ? 1.5 : 1.0,
+    };
+    
+    const reasoning = `Heuristic analysis: strategy=${strategy} (score=${strategyScore}), complexity=${complexity}, temporal=${temporal} (score=${temporalScore}), media=${mediaImportance}`;
+    
     return {
-      needsImages,
-      needsVideos,
+      strategy,
+      complexity,
+      temporal,
+      contentPreferences: {
+        needsImages,
+        needsVideos,
+        mediaImportance,
+        visualLearning,
+      },
       confidence: {
-        images: imageConfidence,
-        videos: videoConfidence
+        strategy: strategyScore > 0 ? 0.7 : 0.5,
+        complexity: 0.6,
+        temporal: temporalScore > 0 ? 0.7 : 0.5,
+        contentPreferences: 0.6,
       },
       reasoning,
-      primaryIntent
+      recommendations,
+      // Legacy compatibility
+      primaryIntent: needsImages && needsVideos ? 'mixed' : 
+                    needsImages ? 'images' : 
+                    needsVideos ? 'videos' : 'documents',
+      needsImages,
+      needsVideos,
     };
   }
 }
-

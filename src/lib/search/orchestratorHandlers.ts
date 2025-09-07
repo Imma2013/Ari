@@ -1,16 +1,13 @@
-import { NeuralReranker } from './neuralReranker';
-import { ContextualFusion } from './contextualFusion';
 import { SearchOrchestrator } from './orchestrator';
 import { getSearchConfig } from './config';
+import { SearchStreamController } from '../utils/streaming';
 
-// Initialize shared components
-const neuralReranker = new NeuralReranker();
-const contextualFusion = new ContextualFusion();
+// Create optimized search orchestrator instances with streaming architecture
+const quickSearch = new SearchOrchestrator(getSearchConfig('quick'));
+const proSearch = new SearchOrchestrator(getSearchConfig('pro'));
+const ultraSearch = new SearchOrchestrator(getSearchConfig('ultra'));
 
-// Create orchestrator instances using the new SearchOrchestrator
-const quickSearch = new SearchOrchestrator(getSearchConfig('quickSearch'));
-const proSearch = new SearchOrchestrator(getSearchConfig('proSearch'));
-const ultraSearch = new SearchOrchestrator(getSearchConfig('ultraSearch'));
+console.log('⚡ Initialized search orchestrators with real-time streaming architecture');
 
 export const orchestratorHandlers: Record<string, SearchOrchestrator> = {
   quickSearch,
@@ -18,5 +15,5 @@ export const orchestratorHandlers: Record<string, SearchOrchestrator> = {
   ultraSearch,
 };
 
-// Export shared components for use in other parts of the system
-export { neuralReranker, contextualFusion, quickSearch, proSearch, ultraSearch };
+// Export instances for direct access
+export { quickSearch, proSearch, ultraSearch };

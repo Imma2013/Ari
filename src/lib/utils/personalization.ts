@@ -24,33 +24,33 @@ export const getPersonalizationData = (): PersonalizationData => {
 };
 
 /**
- * Enhance system instructions with personalization data
+ * System instructions with personalization data
  */
-export const enhanceSystemInstructions = (
+export const systemInstructions = (
   baseInstructions: string,
   personalizationData: PersonalizationData
 ): string => {
-  let enhancedInstructions = baseInstructions || '';
+  let instructions = baseInstructions || '';
 
   // Add user introduction if available
   if (personalizationData.introduceYourself?.trim()) {
-    enhancedInstructions += `\n\nUser Context: ${personalizationData.introduceYourself.trim()}`;
+    instructions += `\n\nUser Context: ${personalizationData.introduceYourself.trim()}`;
   }
 
   // Add location context if available
   if (personalizationData.userLocation?.trim()) {
-    enhancedInstructions += `\n\nUser Location: ${personalizationData.userLocation.trim()}`;
+    instructions += `\n\nUser Location: ${personalizationData.userLocation.trim()}`;
   }
 
-  return enhancedInstructions;
+  return instructions;
 };
 
 /**
- * Get enhanced system instructions with personalization
+ * Get system instructions with personalization
  */
-export const getEnhancedSystemInstructions = (baseInstructions?: string): string => {
+export const getSystemInstructions = (baseInstructions?: string): string => {
   const personalizationData = getPersonalizationData();
-  return enhanceSystemInstructions(baseInstructions || '', personalizationData);
+  return systemInstructions(baseInstructions || '', personalizationData);
 };
 
 /**

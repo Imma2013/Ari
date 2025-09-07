@@ -1,168 +1,221 @@
-import { OrchestratorConfig, SearchOrchestrator } from './orchestrator';
+import { OrchestratorConfig } from './orchestrator';
+import { SearchIntent } from './intentDetection';
 
-export const searchConfigs: Record<string, OrchestratorConfig> = {
-  quickSearch: {
-    mode: 'quick',
-    maxSources: 8, // Tight, focused source set for immediate answers
-    maxImages: 12, // Reasonable image set for quick visual results
-    maxVideos: 8, // Focused video set for immediate media results
+// Dynamic configuration system that adapts based on search intent
+export const getSearchConfig = (mode: 'quick' | 'pro' | 'ultra', intent?: SearchIntent): OrchestratorConfig => {
+  const baseConfig = {
     rerankingConfig: {
-      threshold: 0.5, // High threshold for only most relevant sources
-      maxDocuments: 12, // Minimal set for speed
-      diversityBoost: false, // Focus on relevance over diversity
-      semanticWeight: 0.8, // Prioritize semantic relevance for precision
-      keywordWeight: 0.2
+      // Intent-driven relevance threshold - dynamic based on search strategy
+      minRelevanceThreshold: intent?.recommendations.relevanceThreshold ?? getDefaultRelevanceThreshold(mode, intent),
+      semanticWeight: 0.5,
+      keywordWeight: 0.3,
+      qualityWeight: 0.1,
+      freshnessWeight: getFreshnessWeight(intent),
+      diversityWeight: getDiversityWeight(intent),
+      adaptiveScoring: true, // Always use adaptive weights
     },
     fusionConfig: {
-      maxChunkSize: 800, // Concise chunks for quick synthesis
-      overlapSize: 80,
-      maxChunks: 3, // Minimal chunks for tight answers
-      semanticGrouping: false, // Skip for immediate response
-      deduplication: true
+      semanticGrouping: true,
+      deduplication: true,
+      skipEnhancement: false,
+      batchSize: 3,
+      enableParallelProcessing: true,
     },
-    searchConfig: {
-      maxQueries: 1, // Single focused query for speed
-      parallelSearches: true,
-      fallbackEnabled: false,
-      expertSourcing: false,
-      intelligentIntent: true // Enable for better intent detection
-    }
-  },
-  
-  proSearch: {
-    mode: 'pro',
-    maxSources: 15, // Broader coverage for research depth
-    maxImages: 20, // More images for comprehensive visual research
-    maxVideos: 15, // More videos for multi-perspective media content
-    rerankingConfig: {
-      threshold: 0.25, // Lower threshold for wider source inclusion
-      maxDocuments: 30, // More documents for comprehensive coverage
-      diversityBoost: true, // Enable diversity for broader perspectives
-      semanticWeight: 0.6, // Balanced semantic and keyword matching
-      keywordWeight: 0.4
-    },
-    fusionConfig: {
-      maxChunkSize: 1200, // Larger chunks for richer context
-      overlapSize: 120,
-      maxChunks: 6, // More chunks for structured synthesis
-      semanticGrouping: true, // Enable for better organization
-      deduplication: true
-    },
-    searchConfig: {
-      maxQueries: 3, // Multiple angles for comprehensive research
-      parallelSearches: true,
-      fallbackEnabled: true, // Enable for reliability
-      expertSourcing: true, // Include authoritative sources
-      intelligentIntent: true // Use LLM for smart intent detection
-    }
-  },
-  
-  ultraSearch: {
-    mode: 'ultra',
-    maxSources: 25, // Premium source selection for rigorous analysis
-    maxImages: 30, // Extensive image collection for thorough visual analysis
-    maxVideos: 25, // Comprehensive video collection for multi-modal research
-    rerankingConfig: {
-      threshold: 0.15, // Very low threshold for exhaustive coverage
-      maxDocuments: 50, // Maximum documents for comprehensive analysis
-      diversityBoost: true, // Strong diversity for multi-perspective synthesis
-      semanticWeight: 0.7, // Balanced for nuanced understanding
-      keywordWeight: 0.3
-    },
-    fusionConfig: {
-      maxChunkSize: 1800, // Large chunks for complex reasoning
-      overlapSize: 180,
-      maxChunks: 10, // More chunks for detailed multi-step synthesis
-      semanticGrouping: true, // Enable for sophisticated organization
-      deduplication: true
-    },
-    searchConfig: {
-      maxQueries: 6, // Multiple search angles for exhaustive coverage
-      parallelSearches: true,
-      fallbackEnabled: true, // Maximum reliability for high-stakes queries
-      expertSourcing: true, // Prioritize authoritative and expert sources
-      intelligentIntent: true // Use advanced LLM intent analysis
-    }
+  };
+
+  // Dynamic configuration based on mode and intent
+  const intentTimeoutMultiplier = intent?.recommendations.timeoutMultiplier ?? 1.0;
+  const intentSearchQueries = intent?.recommendations.searchQueries ?? getDefaultSearchQueries(mode);
+  const intentSearchDepth = intent?.recommendations.searchDepth ?? 'medium';
+
+  switch (mode) {
+    case 'quick':
+      return {
+        mode: 'quick',
+        // No artificial limits - let relevance and intent guide results
+        maxSources: 200, // High ceiling, relevance filters will limit
+        maxImages: 200, 
+        maxVideos: 200, 
+        timeoutConfig: {
+          queryTimeout: Math.floor(500 * intentTimeoutMultiplier),
+          searchTimeout: Math.floor(3000 * intentTimeoutMultiplier),
+          rerankTimeout: Math.floor(1200 * intentTimeoutMultiplier),
+          responseTimeout: Math.floor(8000 * intentTimeoutMultiplier),
+          totalTimeout: Math.floor(15000 * intentTimeoutMultiplier),
+        },
+        searchConfig: {
+          maxQueries: intentSearchQueries,
+          parallelSearches: intent?.recommendations.parallelization ?? true,
+          batchSize: getBatchSize(intentSearchDepth, 'quick'),
+        },
+        streamingConfig: {
+          enableStreaming: true,
+          minSourcesForResponse: 5,
+          maxResponseDelay: 100,
+          progressiveEnhancement: true,
+          earlyTermination: false,
+          parallelProcessing: true,
+        },
+        rerankingConfig: baseConfig.rerankingConfig,
+        fusionConfig: {
+          ...baseConfig.fusionConfig,
+          maxChunkSize: getChunkSize(intentSearchDepth, 'quick'),
+          overlapSize: 80,
+          maxChunks: getMaxChunks(intentSearchDepth, 'quick'),
+          skipEnhancement: true, // Skip for speed in quick mode
+          batchSize: 3,
+          enableParallelProcessing: false,
+        },
+      };
+
+    case 'pro':
+      return {
+        mode: 'pro',
+        // No artificial limits - let relevance and intent guide results
+        maxSources: 300,
+        maxImages: 300,
+        maxVideos: 300,
+        timeoutConfig: {
+          queryTimeout: Math.floor(800 * intentTimeoutMultiplier),
+          searchTimeout: Math.floor(4500 * intentTimeoutMultiplier),
+          rerankTimeout: Math.floor(2000 * intentTimeoutMultiplier),
+          responseTimeout: Math.floor(10000 * intentTimeoutMultiplier),
+          totalTimeout: Math.floor(18000 * intentTimeoutMultiplier),
+        },
+        searchConfig: {
+          maxQueries: intentSearchQueries,
+          parallelSearches: intent?.recommendations.parallelization ?? true,
+          batchSize: getBatchSize(intentSearchDepth, 'pro'),
+        },
+        streamingConfig: {
+          enableStreaming: true,
+          minSourcesForResponse: 8,
+          maxResponseDelay: 150,
+          progressiveEnhancement: true,
+          earlyTermination: false,
+          parallelProcessing: true,
+        },
+        rerankingConfig: baseConfig.rerankingConfig,
+        fusionConfig: {
+          ...baseConfig.fusionConfig,
+          maxChunkSize: getChunkSize(intentSearchDepth, 'pro'),
+          overlapSize: 120,
+          maxChunks: getMaxChunks(intentSearchDepth, 'pro'),
+          skipEnhancement: false, // Enable batched enhancement
+          batchSize: 4,
+          enableParallelProcessing: true,
+        },
+      };
+
+    case 'ultra':
+      return {
+        mode: 'ultra',
+        // No artificial limits - let relevance and intent guide results
+        maxSources: 500,
+        maxImages: 400,
+        maxVideos: 400,
+        timeoutConfig: {
+          queryTimeout: Math.floor(1200 * intentTimeoutMultiplier),
+          searchTimeout: Math.floor(6000 * intentTimeoutMultiplier),
+          rerankTimeout: Math.floor(3500 * intentTimeoutMultiplier),
+          responseTimeout: Math.floor(12000 * intentTimeoutMultiplier),
+          totalTimeout: Math.floor(25000 * intentTimeoutMultiplier),
+        },
+        searchConfig: {
+          maxQueries: Math.min(intentSearchQueries + 1, 8), // Ultra can use more queries
+          parallelSearches: intent?.recommendations.parallelization ?? true,
+          batchSize: getBatchSize(intentSearchDepth, 'ultra'),
+        },
+        streamingConfig: {
+          enableStreaming: true,
+          minSourcesForResponse: 10,
+          maxResponseDelay: 200,
+          progressiveEnhancement: true,
+          earlyTermination: true, // Ultra mode can use early termination
+          parallelProcessing: true,
+        },
+        rerankingConfig: baseConfig.rerankingConfig,
+        fusionConfig: {
+          ...baseConfig.fusionConfig,
+          maxChunkSize: getChunkSize(intentSearchDepth, 'ultra'),
+          overlapSize: 200,
+          maxChunks: getMaxChunks(intentSearchDepth, 'ultra'),
+          skipEnhancement: false, // Enable full enhancement for quality
+          batchSize: 3, // Smaller batches for better quality
+          enableParallelProcessing: true,
+        },
+      };
+
+    default:
+      throw new Error(`Unknown search mode: ${mode}`);
   }
 };
 
-// Default configuration
-export const defaultSearchConfig = searchConfigs.quickSearch;
+// Helper functions for intent-driven configuration
 
-// Function to get configuration by mode
-export function getSearchConfig(mode: string): OrchestratorConfig {
-  return searchConfigs[mode] || defaultSearchConfig;
+function getDefaultRelevanceThreshold(mode: 'quick' | 'pro' | 'ultra', intent?: SearchIntent): number {
+  if (intent?.strategy === 'quickAnswer') return 0.6; // High threshold for quick answers
+  if (intent?.strategy === 'research') return 0.25; // Lower threshold for research
+  if (intent?.strategy === 'news') return 0.4; // Medium threshold for news
+  if (intent?.strategy === 'comparison') return 0.35; // Lower threshold for comparisons
+  
+  // Mode-based defaults
+  switch (mode) {
+    case 'quick': return 0.5;
+    case 'pro': return 0.4;
+    case 'ultra': return 0.3;
+  }
 }
 
-// Function to create orchestrator instance
-export function createSearchOrchestrator(mode: string) {
-  const config = getSearchConfig(mode);
-  return new SearchOrchestrator(config);
+function getFreshnessWeight(intent?: SearchIntent): number {
+  if (intent?.temporal === 'current') return 0.2; // High weight for current info
+  if (intent?.temporal === 'trending') return 0.15;
+  if (intent?.strategy === 'news') return 0.25; // News needs fresh content
+  return 0.05; // Default low freshness weight
 }
 
-// Performance tuning configurations
-export const performanceConfigs = {
-  quick: {
-    maxConcurrentSearches: 1,
-    timeout: 30000, // 30 seconds
-    retryAttempts: 1
-  },
-  pro: {
-    maxConcurrentSearches: 3,
-    timeout: 60000, // 1 minute
-    retryAttempts: 2
-  },
-  ultra: {
-    maxConcurrentSearches: 6,
-    timeout: 120000, // 2 minutes
-    retryAttempts: 3
-  }
-};
+function getDiversityWeight(intent?: SearchIntent): number {
+  if (intent?.strategy === 'research') return 0.15; // Research benefits from diversity
+  if (intent?.strategy === 'comparison') return 0.12; // Comparisons need variety
+  if (intent?.complexity === 'complex') return 0.1;
+  return 0.05; // Default low diversity weight
+}
 
-// Task complexity mapping for search optimization
-export const taskComplexityMapping = {
-  simple: {
-    maxQueries: 1,
-    parallelSearches: false,
-    maxSources: 15
-  },
-  moderate: {
-    maxQueries: 3,
-    parallelSearches: true,
-    maxSources: 25
-  },
-  complex: {
-    maxQueries: 8,
-    parallelSearches: true,
-    maxSources: 50
+function getDefaultSearchQueries(mode: 'quick' | 'pro' | 'ultra'): number {
+  switch (mode) {
+    case 'quick': return 3;
+    case 'pro': return 4;
+    case 'ultra': return 5;
   }
-};
+}
 
-// Search engine configurations
-export const searchEngineConfigs = {
-  default: {
-    engines: ['google', 'bing', 'duckduckgo'],
-    categories: ['general'],
-    language: 'en',
-    safesearch: 1
-  },
-  academic: {
-    engines: ['google', 'bing', 'arxiv', 'scholar'],
-    categories: ['science', 'academic'],
-    language: 'en',
-    safesearch: 1
-  },
-  technical: {
-    engines: ['google', 'bing', 'github', 'stackoverflow'],
-    categories: ['general', 'tech'],
-    language: 'en',
-    safesearch: 1
-  },
-  news: {
-    engines: ['google', 'bing', 'news'],
-    categories: ['news'],
-    language: 'en',
-    safesearch: 1
-  }
-};
+function getMinSourcesForStrategy(strategy?: SearchIntent['strategy']): number {
+  if (strategy === 'quickAnswer') return 2; // Quick answers need fewer sources
+  if (strategy === 'research') return 4; // Research needs more sources
+  if (strategy === 'comparison') return 3; // Comparisons need multiple perspectives
+  return 3; // Default
+}
 
+function getBatchSize(depth: 'shallow' | 'medium' | 'deep', mode: 'quick' | 'pro' | 'ultra'): number {
+  const baseSize = mode === 'quick' ? 20 : mode === 'pro' ? 25 : 30;
+  
+  if (depth === 'shallow') return Math.floor(baseSize * 0.8);
+  if (depth === 'deep') return Math.floor(baseSize * 1.3);
+  return baseSize;
+}
+
+function getChunkSize(depth: 'shallow' | 'medium' | 'deep', mode: 'quick' | 'pro' | 'ultra'): number {
+  const baseSize = mode === 'quick' ? 600 : mode === 'pro' ? 800 : 1000;
+  
+  if (depth === 'shallow') return Math.floor(baseSize * 0.7);
+  if (depth === 'deep') return Math.floor(baseSize * 1.4);
+  return baseSize;
+}
+
+function getMaxChunks(depth: 'shallow' | 'medium' | 'deep', mode: 'quick' | 'pro' | 'ultra'): number {
+  const baseChunks = mode === 'quick' ? 4 : mode === 'pro' ? 6 : 8;
+  
+  if (depth === 'shallow') return Math.max(baseChunks - 1, 2);
+  if (depth === 'deep') return baseChunks + 2;
+  return baseChunks;
+}

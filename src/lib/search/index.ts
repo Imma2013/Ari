@@ -3,7 +3,7 @@ import { SearchOrchestrator } from './orchestrator';
 import { NeuralReranker } from './neuralReranker';
 import { ContextualFusion } from './contextualFusion';
 import { SearxngClient } from '../searxng';
-import { searchConfigs, getSearchConfig, createSearchOrchestrator } from './config';
+import { getSearchConfig } from './config';
 
 // Export the orchestrator handlers
 export { orchestratorHandlers };
@@ -18,9 +18,5 @@ export {
 
 // Export configuration and utilities
 export {
-  searchConfigs,
-  getSearchConfig,
-  createSearchOrchestrator
+  getSearchConfig
 };
-
-// Note: Old MetaSearchAgent handlers removed - now using SearchOrchestrator for all search modes
