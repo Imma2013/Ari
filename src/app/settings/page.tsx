@@ -11,12 +11,8 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { LANGUAGES, getLanguageConfig, isRTL } from '@/lib/translations/config';
 
 interface SettingsType {
-  chatModelProviders: {
-    [key: string]: [Record<string, any>];
-  };
-  embeddingModelProviders: {
-    [key: string]: [Record<string, any>];
-  };
+  chatModelProviders: Record<string, ModelOption[]>;
+  embeddingModelProviders: Record<string, ModelOption[]>;
   openaiApiKey: string;
   groqApiKey: string;
   openrouterApiKey: string;
@@ -26,6 +22,11 @@ interface SettingsType {
   customOpenaiApiKey: string;
   customOpenaiApiUrl: string;
   customOpenaiModelName: string;
+}
+
+interface ModelOption {
+  name: string;
+  displayName: string;
 }
 
 interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
