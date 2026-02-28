@@ -1,6 +1,12 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
+type SupabaseCookieToSet = {
+  name: string;
+  value: string;
+  options?: any;
+};
+
 export interface SessionContext {
   response: NextResponse;
   userId: string | null;
@@ -23,7 +29,7 @@ export const getSessionContext = async (
       getAll() {
         return request.cookies.getAll();
       },
-      setAll(cookiesToSet) {
+      setAll(cookiesToSet: SupabaseCookieToSet[]) {
         cookiesToSet.forEach(({ name, value, options }) => {
           request.cookies.set(name, value);
           response.cookies.set(name, value, options);
