@@ -14,6 +14,114 @@ import { Settings } from 'lucide-react';
 import Link from 'next/link';
 import NextError from 'next/error';
 
+const LOCAL_QUICK_MODEL =
+  process.env.NEXT_PUBLIC_WEBLLM_MODEL ||
+  'Llama-3.1-8B-Instruct-q4f32_1-MLC';
+
+let localEnginePromise: Promise<any> | null = null;
+
+const isWebGpuSupported = () =>
+  typeof window !== 'undefined' &&
+  typeof navigator !== 'undefined' &&
+  'gpu' in navigator;
+
+const getLocalEngine = async (
+  onProgress?: (progressText: string) => void,
+): Promise<any> => {
+  if (!isWebGpuSupported()) {
+    throw new Error('WebGPU is not available on this device/browser');
+  }
+
+  if (!localEnginePromise) {
+    localEnginePromise = (async () => {
+      const webllm = await import('@mlc-ai/web-llm');
+      return webllm.CreateMLCEngine(LOCAL_QUICK_MODEL, {
+        initProgressCallback: (progress: any) => {
+          const text =
+            progress?.text || progress?.status || 'Loading local model...';
+          if (onProgress) onProgress(String(text));
+        },
+      });
+    })().catch((error) => {
+      localEnginePromise = null;
+      throw error;
+    });
+  }
+
+  return localEnginePromise;
+};
+
+const runLocalQuickSearch = async (
+  query: string,
+  onProgress?: (progressText: string) => void,
+) => {
+  const searchRes = await fetch(
+    `/api/searxng?q=${encodeURIComponent(query)}&format=json`,
+    {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    },
+  );
+
+  if (!searchRes.ok) {
+    throw new Error(`SearXNG request failed with status ${searchRes.status}`);
+  }
+
+  const searchData = await searchRes.json();
+  const rawResults = Array.isArray(searchData?.results) ? searchData.results : [];
+  const topResults = rawResults.slice(0, 8);
+
+  if (topResults.length === 0) {
+    return {
+      answer:
+        "I couldn't find web results for that query right now. Try rephrasing or checking your SearXNG endpoint.",
+      sources: [],
+    };
+  }
+
+  const contextText = topResults
+    .map((result: any, index: number) => {
+      const title = result?.title || 'Untitled';
+      const url = result?.url || '';
+      const content = result?.content || '';
+      return `[${index + 1}] ${title}\nURL: ${url}\nSnippet: ${content}`;
+    })
+    .join('\n\n');
+
+  const engine = await getLocalEngine(onProgress);
+  const completion = await engine.chat.completions.create({
+    messages: [
+      {
+        role: 'system',
+        content:
+          'You are a concise web research assistant. Use only the provided search snippets, cite source numbers like [1], and say when information is uncertain.',
+      },
+      {
+        role: 'user',
+        content: `Question: ${query}\n\nSearch snippets:\n${contextText}\n\nWrite a direct answer with citations.`,
+      },
+    ],
+    temperature: 0.2,
+  });
+
+  const answer =
+    completion?.choices?.[0]?.message?.content?.toString() ||
+    'I could not generate a local response for that query.';
+
+  const sources = topResults.map((result: any) => ({
+    pageContent: result?.content || '',
+    metadata: {
+      title: result?.title || 'Untitled',
+      url: result?.url || '',
+      source: result?.engine || 'searxng',
+    },
+  }));
+
+  return { answer, sources };
+};
+
 
 export type ImageResult = {
   img_src: string;
@@ -433,6 +541,42 @@ const ChatWindow = ({ id }: { id?: string }) => {
         createdAt: new Date(),
       },
     ]);
+
+    if (searchMode === 'quickSearch') {
+      try {
+        toast.message('Running local Llama quick search...');
+        const local = await runLocalQuickSearch(message);
+
+        const assistantMessageId = crypto.randomBytes(7).toString('hex');
+        setMessages((prevMessages) => [
+          ...prevMessages,
+          {
+            content: local.answer,
+            messageId: assistantMessageId,
+            chatId: chatId!,
+            role: 'assistant',
+            sources: local.sources as any,
+            currentStep: 'complete',
+            steps: ['search', 'refine', 'read', 'generate', 'complete'],
+            createdAt: new Date(),
+          },
+        ]);
+
+        setChatHistory((prevHistory) => [
+          ...prevHistory,
+          ['human', message],
+          ['assistant', local.answer],
+        ]);
+        setMessageAppeared(true);
+        setLoading(false);
+        return;
+      } catch (localError) {
+        console.warn('Local quick search failed; falling back to server route.', localError);
+        toast.error(
+          'Local quick search failed on this device. Falling back to server search.',
+        );
+      }
+    }
 
     const messageHandler = async (data: any) => {
       if (data.type === 'error') {
