@@ -91,6 +91,9 @@ export const POST = async (req: Request) => {
         GEMINI: {
           API_KEY: config.geminiApiKey,
         },
+        OPENROUTER: {
+          API_KEY: config.openrouterApiKey,
+        },
         OLLAMA: {
           API_URL: config.ollamaApiUrl,
         },

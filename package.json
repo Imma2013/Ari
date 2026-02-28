@@ -5,7 +5,7 @@
   "author": "Kamran1819G",
   "scripts": {
     "dev": "next dev",
-    "build": "npm run db:push && next build",
+    "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "format:write": "prettier . --write",
