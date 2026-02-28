@@ -2,6 +2,12 @@ import { Cloud, Sun, CloudRain, CloudSnow, Wind, MapPin, Thermometer, Gauge } fr
 import { useEffect, useState } from 'react';
 
 const WeatherWidget = () => {
+  const DEFAULT_LOCATION = {
+    latitude: 40.7128,
+    longitude: -74.006,
+    city: 'New York',
+  };
+
   const getWindDirection = (degrees: number): string => {
     const directions = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
     const index = Math.round(degrees / 22.5) % 16;
@@ -26,14 +32,26 @@ const WeatherWidget = () => {
   const [geolocationPermission, setGeolocationPermission] = useState<'granted' | 'denied' | 'prompt' | 'unknown'>('unknown');
 
   const getApproxLocation = async () => {
-    const res = await fetch('https://ipwhois.app/json/');
-    const data = await res.json();
+    try {
+      const res = await fetch('/api/location', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
 
-    return {
-      latitude: data.latitude,
-      longitude: data.longitude,
-      city: data.city,
-    };
+      if (!res.ok) return DEFAULT_LOCATION;
+      const data = await res.json();
+
+      return {
+        latitude: Number(data.latitude) || DEFAULT_LOCATION.latitude,
+        longitude: Number(data.longitude) || DEFAULT_LOCATION.longitude,
+        city: data.city || DEFAULT_LOCATION.city,
+      };
+    } catch (error) {
+      console.error('Error fetching approximate location:', error);
+      return DEFAULT_LOCATION;
+    }
   };
 
   const getPreciseLocation = async (): Promise<{

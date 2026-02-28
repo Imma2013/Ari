@@ -1048,61 +1048,129 @@ const ChatWindow = ({ id }: { id?: string }) => {
       }
     };
 
-    const res = await fetch('/api/chat', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        content: message,
-        message: {
-          messageId: messageId,
-          chatId: chatId!,
-          content: message,
-        },
+    const payload = {
+      content: message,
+      message: {
+        messageId: messageId,
         chatId: chatId!,
-        files: fileIds,
-        searchMode: searchMode,
+        content: message,
+      },
+      chatId: chatId!,
+      files: fileIds,
+      searchMode: searchMode,
+      history: chatHistory,
+      chatModel: {
+        name: chatModelProvider.name,
+        provider: chatModelProvider.provider,
+      },
+      embeddingModel: {
+        name: embeddingModelProvider.name,
+        provider: embeddingModelProvider.provider,
+      },
+      systemInstructions: localStorage.getItem('systemInstructions'),
+      introduceYourself: localStorage.getItem('introduceYourself'),
+      userLocation: localStorage.getItem('userLocation'),
+    };
 
-        history: chatHistory,
-        chatModel: {
-          name: chatModelProvider.name,
-          provider: chatModelProvider.provider,
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
         },
-        embeddingModel: {
-          name: embeddingModelProvider.name,
-          provider: embeddingModelProvider.provider,
-        },
-        systemInstructions: localStorage.getItem('systemInstructions'),
-        introduceYourself: localStorage.getItem('introduceYourself'),
-        userLocation: localStorage.getItem('userLocation'),
-      }),
-    });
+        body: JSON.stringify(payload),
+      });
 
-    if (!res.body) throw new Error('No response body');
-
-    const reader = res.body?.getReader();
-    const decoder = new TextDecoder('utf-8');
-
-    let partialChunk = '';
-
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-
-      partialChunk += decoder.decode(value, { stream: true });
-
-      try {
-        const messages = partialChunk.split('\n');
-        for (const msg of messages) {
-          if (!msg.trim()) continue;
-          const json = JSON.parse(msg);
-          messageHandler(json);
-        }
-        partialChunk = '';
-      } catch (error) {
-        console.warn('Incomplete JSON, waiting for next chunk...');
+      if (!res.ok) {
+        throw new Error(`Chat API failed with status ${res.status}`);
       }
+
+      if (!res.body) throw new Error('No response body');
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+
+      let partialChunk = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        partialChunk += decoder.decode(value, { stream: true });
+        const lines = partialChunk.split('\n');
+        partialChunk = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const json = JSON.parse(line);
+            messageHandler(json);
+          } catch {
+            console.warn('Skipped malformed stream line');
+          }
+        }
+      }
+
+      if (partialChunk.trim()) {
+        try {
+          const json = JSON.parse(partialChunk);
+          messageHandler(json);
+        } catch {
+          console.warn('Trailing stream chunk was not valid JSON');
+        }
+      }
+    } catch (error) {
+      console.error('Primary /api/chat request failed, trying /api/search fallback:', error);
+      const fallbackRes = await fetch('/api/search', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: message,
+          sessionId: chatId,
+          history: chatHistory,
+          stream: false,
+          searchMode,
+          chatModel: payload.chatModel,
+          embeddingModel: payload.embeddingModel,
+          systemInstructions: payload.systemInstructions,
+          introduceYourself: payload.introduceYourself,
+          userLocation: payload.userLocation,
+        }),
+      });
+
+      if (!fallbackRes.ok) {
+        throw new Error(`Fallback /api/search failed with status ${fallbackRes.status}`);
+      }
+
+      const fallbackData = await fallbackRes.json();
+      const assistantMessageId = crypto.randomBytes(7).toString('hex');
+
+      setMessages((prevMessages) => [
+        ...prevMessages,
+        {
+          content: fallbackData.message || 'No response received.',
+          messageId: assistantMessageId,
+          chatId: chatId!,
+          role: 'assistant',
+          sources: fallbackData.sources || [],
+          images: fallbackData.images || [],
+          videos: fallbackData.videos || [],
+          createdAt: new Date(),
+          currentStep: 'complete',
+          steps: ['search', 'refine', 'read', 'generate', 'complete'],
+        },
+      ]);
+
+      setChatHistory((prevHistory) => [
+        ...prevHistory,
+        ['human', message],
+        ['assistant', fallbackData.message || ''],
+      ]);
+      setMessageAppeared(true);
+    } finally {
+      setLoading(false);
     }
   };
 
