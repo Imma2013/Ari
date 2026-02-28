@@ -1091,6 +1091,45 @@ const ChatWindow = ({ id }: { id?: string }) => {
         );
       }
 
+      if (data.type === 'response_chunk') {
+        const chunk = data.data?.toString() || '';
+        if (!chunk) return;
+
+        if (!added) {
+          setMessages((prevMessages) => [
+            ...prevMessages,
+            {
+              content: chunk,
+              messageId: data.messageId,
+              chatId: chatId!,
+              role: 'assistant',
+              sources: sources,
+              currentStep: 'generate',
+              steps: completedSteps,
+              createdAt: new Date(),
+            },
+          ]);
+          added = true;
+          recievedMessage = chunk;
+        } else {
+          setMessages((prevMessages) =>
+            prevMessages.map((msg) => {
+              if (msg.messageId === data.messageId) {
+                return {
+                  ...msg,
+                  content: msg.content + chunk,
+                  sources: sources || msg.sources,
+                };
+              }
+              return msg;
+            }),
+          );
+          recievedMessage += chunk;
+        }
+
+        setMessageAppeared(true);
+      }
+
       if (data.type === 'message') {
         console.log('📝 ChatWindow: Received message data, length:', data.data?.length || 0, 'isComplete:', data.isComplete, 'messageId:', data.messageId);
         
