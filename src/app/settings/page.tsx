@@ -140,6 +140,44 @@ const tabs = [
   { id: 'personalization' as TabType, label: 'Personalization', icon: User },
 ];
 
+const CHAT_PROVIDER_PRIORITY = [
+  'ollama',
+  'groq',
+  'openrouter',
+  'custom_openai',
+  'openai',
+  'anthropic',
+  'gemini',
+  'lmstudio',
+  'deepseek',
+];
+
+const EMBEDDING_PROVIDER_PRIORITY = [
+  'ollama',
+  'transformers',
+  'openai',
+  'gemini',
+  'lmstudio',
+];
+
+const pickDefaultProvider = (
+  providers: Record<string, any>,
+  priority: string[],
+) => {
+  for (const provider of priority) {
+    if (Array.isArray(providers?.[provider]) && providers[provider].length > 0) {
+      return provider;
+    }
+  }
+  return Object.keys(providers || {})[0] || '';
+};
+
+const pickDefaultModel = (models: Array<{ name: string }> = []) => {
+  if (!Array.isArray(models) || models.length === 0) return '';
+  const llama = models.find((m) => /llama/i.test(m.name));
+  return llama?.name || models[0].name;
+};
+
 const Page = () => {
   const { t, currentLanguage } = useTranslation();
   const [activeTab, setActiveTab] = useState<TabType>('appearance');
@@ -180,17 +218,14 @@ const Page = () => {
       const data = (await res.json()) as SettingsType;
       setConfig(data);
 
-      const chatModelProvidersKeys = Object.keys(data.chatModelProviders || {});
-      const embeddingModelProvidersKeys = Object.keys(
-        data.embeddingModelProviders || {},
+      const defaultChatModelProvider = pickDefaultProvider(
+        data.chatModelProviders || {},
+        CHAT_PROVIDER_PRIORITY,
       );
-
-      const defaultChatModelProvider =
-        chatModelProvidersKeys.length > 0 ? chatModelProvidersKeys[0] : '';
-      const defaultEmbeddingModelProvider =
-        embeddingModelProvidersKeys.length > 0
-          ? embeddingModelProvidersKeys[0]
-          : '';
+      const defaultEmbeddingModelProvider = pickDefaultProvider(
+        data.embeddingModelProviders || {},
+        EMBEDDING_PROVIDER_PRIORITY,
+      );
 
       const chatModelProvider =
         localStorage.getItem('chatModelProvider') ||
@@ -200,7 +235,7 @@ const Page = () => {
         localStorage.getItem('chatModel') ||
         (data.chatModelProviders &&
         data.chatModelProviders[chatModelProvider]?.length > 0
-          ? data.chatModelProviders[chatModelProvider][0].name
+          ? pickDefaultModel(data.chatModelProviders[chatModelProvider])
           : undefined) ||
         '';
       const embeddingModelProvider =
@@ -284,8 +319,13 @@ const Page = () => {
         const newChatProviders = Object.keys(data.chatModelProviders || {});
 
         if (!currentChatProvider && newChatProviders.length > 0) {
-          const firstProvider = newChatProviders[0];
-          const firstModel = data.chatModelProviders[firstProvider]?.[0]?.name;
+          const firstProvider = pickDefaultProvider(
+            data.chatModelProviders || {},
+            CHAT_PROVIDER_PRIORITY,
+          );
+          const firstModel = pickDefaultModel(
+            data.chatModelProviders[firstProvider] || [],
+          );
 
           if (firstModel) {
             setSelectedChatModelProvider(firstProvider);

@@ -139,3 +139,51 @@ export const getAvailableEmbeddingModelProviders = async () => {
 
   return models;
 };
+
+export const getDefaultChatProviderKey = (
+  providers: Record<string, Record<string, ChatModel>>,
+) => {
+  const priority = [
+    'ollama',
+    'groq',
+    'openrouter',
+    'custom_openai',
+    'openai',
+    'anthropic',
+    'gemini',
+    'lmstudio',
+    'deepseek',
+  ];
+
+  for (const key of priority) {
+    if (providers[key] && Object.keys(providers[key]).length > 0) {
+      return key;
+    }
+  }
+
+  return Object.keys(providers)[0];
+};
+
+export const getDefaultChatModelKey = (
+  providerModels: Record<string, ChatModel> | undefined,
+) => {
+  if (!providerModels || Object.keys(providerModels).length === 0) {
+    return '';
+  }
+
+  const modelKeys = Object.keys(providerModels);
+  const llamaModel = modelKeys.find((k) => /llama/i.test(k));
+  return llamaModel || modelKeys[0];
+};
+
+export const getDefaultEmbeddingProviderKey = (
+  providers: Record<string, Record<string, EmbeddingModel>>,
+) => {
+  const priority = ['ollama', 'transformers', 'openai', 'gemini', 'lmstudio'];
+  for (const key of priority) {
+    if (providers[key] && Object.keys(providers[key]).length > 0) {
+      return key;
+    }
+  }
+  return Object.keys(providers)[0];
+};

@@ -4,7 +4,11 @@ import { extractYouTubeVideoId, containsYouTubeLink } from '@/lib/utils/youtube'
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { ChatOpenAI } from '@langchain/openai';
 import { PromptTemplate } from '@langchain/core/prompts';
-import { getAvailableChatModelProviders } from '@/lib/providers';
+import {
+  getAvailableChatModelProviders,
+  getDefaultChatModelKey,
+  getDefaultChatProviderKey,
+} from '@/lib/providers';
 import {
   getCustomOpenaiApiKey,
   getCustomOpenaiApiUrl,
@@ -139,12 +143,10 @@ export async function POST(req: NextRequest) {
 
     // Get chat model
     const chatModelProviders = await getAvailableChatModelProviders();
-    const chatModelProvider = chatModelProviders[
-      chatModel?.provider || Object.keys(chatModelProviders)[0]
-    ];
-    const model = chatModelProvider[
-      chatModel?.name || Object.keys(chatModelProvider)[0]
-    ];
+    const selectedChatProvider =
+      chatModel?.provider || getDefaultChatProviderKey(chatModelProviders);
+    const chatModelProvider = chatModelProviders[selectedChatProvider];
+    const model = chatModelProvider[chatModel?.name || getDefaultChatModelKey(chatModelProvider)];
 
     let llm: BaseChatModel | undefined;
 

@@ -4,7 +4,11 @@ import {
   getCustomOpenaiApiUrl,
   getCustomOpenaiModelName,
 } from '@/lib/config';
-import { getAvailableChatModelProviders } from '@/lib/providers';
+import {
+  getAvailableChatModelProviders,
+  getDefaultChatModelKey,
+  getDefaultChatProviderKey,
+} from '@/lib/providers';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { AIMessage, BaseMessage, HumanMessage } from '@langchain/core/messages';
 import { ChatOpenAI } from '@langchain/openai';
@@ -38,14 +42,11 @@ export const POST = async (req: Request) => {
 
     const chatModelProviders = await getAvailableChatModelProviders();
 
-    const chatModelProvider =
-      chatModelProviders[
-        body.chatModel?.provider || Object.keys(chatModelProviders)[0]
-      ];
+    const selectedChatProvider =
+      body.chatModel?.provider || getDefaultChatProviderKey(chatModelProviders);
+    const chatModelProvider = chatModelProviders[selectedChatProvider];
     const chatModel =
-      chatModelProvider[
-        body.chatModel?.model || Object.keys(chatModelProvider)[0]
-      ];
+      chatModelProvider[body.chatModel?.model || getDefaultChatModelKey(chatModelProvider)];
 
     let llm: BaseChatModel | undefined;
 

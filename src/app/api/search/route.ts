@@ -4,6 +4,9 @@ import { ChatOpenAI } from '@langchain/openai';
 import {
   getAvailableChatModelProviders,
   getAvailableEmbeddingModelProviders,
+  getDefaultChatModelKey,
+  getDefaultChatProviderKey,
+  getDefaultEmbeddingProviderKey,
 } from '@/lib/providers';
 import { AIMessage, BaseMessage, HumanMessage } from '@langchain/core/messages';
 import {
@@ -16,6 +19,7 @@ import { streamToAsyncIterator, SearchStreamData, createStreamingResponse, Searc
 import QuickSearchOrchestrator from '@/lib/search/quickSearchOrchestrator';
 import ProSearchOrchestrator from '@/lib/search/proSearchOrchestrator';
 import UltraSearchOrchestrator from '@/lib/search/ultraSearchOrchestrator';
+import { saveSearchTurn } from '@/lib/supabase/search-history';
 
 interface chatModel {
   provider: string;
@@ -33,6 +37,7 @@ interface ChatRequestBody {
   chatModel?: chatModel;
   embeddingModel?: embeddingModel;
   query: string;
+  sessionId?: string;
   history: Array<[string, string]>;
   stream?: boolean;
   systemInstructions?: string;
@@ -66,14 +71,15 @@ export const POST = async (req: Request) => {
       getAvailableEmbeddingModelProviders(),
     ]);
 
-    const chatModelProvider =
-      body.chatModel?.provider || Object.keys(chatModelProviders)[0];
+    const selectedChatProvider =
+      body.chatModel?.provider || getDefaultChatProviderKey(chatModelProviders);
+    const chatModelProvider = chatModelProviders[selectedChatProvider];
     const chatModel =
-      body.chatModel?.name ||
-      Object.keys(chatModelProviders[chatModelProvider])[0];
+      body.chatModel?.name || getDefaultChatModelKey(chatModelProvider);
 
     const embeddingModelProvider =
-      body.embeddingModel?.provider || Object.keys(embeddingModelProviders)[0];
+      body.embeddingModel?.provider ||
+      getDefaultEmbeddingProviderKey(embeddingModelProviders);
     const embeddingModel =
       body.embeddingModel?.name ||
       Object.keys(embeddingModelProviders[embeddingModelProvider])[0];
@@ -93,10 +99,10 @@ export const POST = async (req: Request) => {
         },
       }) as unknown as BaseChatModel;
     } else if (
-      chatModelProviders[chatModelProvider] &&
-      chatModelProviders[chatModelProvider][chatModel]
+      chatModelProvider &&
+      chatModelProvider[chatModel]
     ) {
-      llm = chatModelProviders[chatModelProvider][chatModel]
+      llm = chatModelProvider[chatModel]
         .model as unknown as BaseChatModel | undefined;
     }
 
@@ -173,7 +179,18 @@ export const POST = async (req: Request) => {
           enhancedSystemInstructions
         );
 
+        const persistence = await saveSearchTurn({
+          sessionId: body.sessionId,
+          query: body.query,
+          answer: result.message,
+          sources: result.sources || [],
+          images: result.images || [],
+          videos: result.videos || [],
+        });
+
         return Response.json({
+          sessionId: persistence.sessionId,
+          persisted: persistence.saved,
           message: result.message,
           sources: result.sources,
           images: result.images,

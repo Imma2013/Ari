@@ -6,6 +6,9 @@ import {
   embeddingModelProviders,
   getAvailableChatModelProviders,
   getAvailableEmbeddingModelProviders,
+  getDefaultChatModelKey,
+  getDefaultChatProviderKey,
+  getDefaultEmbeddingProviderKey,
 } from '@/lib/providers';
 import db from '@/lib/db';
 import { chats, messages as messagesSchema } from '@/lib/db/schema';
@@ -28,6 +31,7 @@ import { SearchStreamController, streamToAsyncIterator, SearchStreamData } from 
 import QuickSearchOrchestrator from '@/lib/search/quickSearchOrchestrator';
 import ProSearchOrchestrator from '@/lib/search/proSearchOrchestrator';
 import UltraSearchOrchestrator from '@/lib/search/ultraSearchOrchestrator';
+import { saveSearchTurn } from '@/lib/supabase/search-history';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -67,6 +71,7 @@ const handleStreamingEvents = async (
   encoder: TextEncoder,
   aiMessageId: string,
   context: ConversationContext,
+  userQuery: string,
 ) => {
   let receivedMessage = '';
   let sources: any[] = [];
@@ -271,6 +276,21 @@ const handleStreamingEvents = async (
         ...(searchIntent && { searchIntent }),
       }
     );
+
+    const persisted = await saveSearchTurn({
+      sessionId: context.chatId,
+      query: userQuery,
+      answer: receivedMessage,
+      sources,
+      images,
+      videos,
+    });
+
+    if (!persisted.saved) {
+      console.warn('Supabase persistence skipped or failed for turn', {
+        chatId: context.chatId,
+      });
+    }
     
     console.log('✅ Conversation turn completed successfully');
     
@@ -317,19 +337,16 @@ export const POST = async (req: Request) => {
       getAvailableEmbeddingModelProviders(),
     ]);
 
-    const chatModelProvider =
-      chatModelProviders[
-        body.chatModel?.provider || Object.keys(chatModelProviders)[0]
-      ];
+    const selectedChatProvider =
+      body.chatModel?.provider || getDefaultChatProviderKey(chatModelProviders);
+    const chatModelProvider = chatModelProviders[selectedChatProvider];
     const chatModel =
-      chatModelProvider[
-        body.chatModel?.name || Object.keys(chatModelProvider)[0]
-      ];
+      chatModelProvider[body.chatModel?.name || getDefaultChatModelKey(chatModelProvider)];
 
-    const embeddingProvider =
-      embeddingModelProviders[
-        body.embeddingModel?.provider || Object.keys(embeddingModelProviders)[0]
-      ];
+    const selectedEmbeddingProvider =
+      body.embeddingModel?.provider ||
+      getDefaultEmbeddingProviderKey(embeddingModelProviders);
+    const embeddingProvider = embeddingModelProviders[selectedEmbeddingProvider];
     const embeddingModel =
       embeddingProvider[
         body.embeddingModel?.name || Object.keys(embeddingProvider)[0]
@@ -553,7 +570,14 @@ export const POST = async (req: Request) => {
       const encoder = new TextEncoder();
 
       // Handle streaming events and result in parallel
-      handleStreamingEvents(stream, writer, encoder, aiMessageId, conversationContext).catch(error => {
+      handleStreamingEvents(
+        stream,
+        writer,
+        encoder,
+        aiMessageId,
+        conversationContext,
+        message.content,
+      ).catch(error => {
         console.error('Error handling streaming events:', error);
         writer.close();
       });
