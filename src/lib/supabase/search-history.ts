@@ -1,14 +1,12 @@
 import { createClient } from '@/lib/supabase/server';
 
-type JsonValue = Record<string, unknown> | unknown[] | string | number | boolean | null;
-
 export interface SaveSearchTurnInput {
   sessionId?: string;
   query: string;
   answer: string;
-  sources?: JsonValue[];
-  images?: JsonValue[];
-  videos?: JsonValue[];
+  sources?: unknown[];
+  images?: unknown[];
+  videos?: unknown[];
 }
 
 export interface SaveSearchTurnResult {
@@ -82,9 +80,9 @@ export const addSearchMessages = async (
   sessionId: string,
   query: string,
   answer: string,
-  sources: JsonValue[] = [],
-  images: JsonValue[] = [],
-  videos: JsonValue[] = [],
+  sources: unknown[] = [],
+  images: unknown[] = [],
+  videos: unknown[] = [],
 ) => {
   const supabase = await createClient();
   const {
@@ -149,4 +147,3 @@ export const saveSearchTurn = async (
     return { saved: false, sessionId: null };
   }
 };
-
