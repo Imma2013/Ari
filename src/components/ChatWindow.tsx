@@ -1180,23 +1180,53 @@ const ChatWindow = ({ id }: { id?: string }) => {
       }
 
       if (data.type === 'messageEnd') {
-        console.log('🏁 ChatWindow: Message ended, messageId:', data.messageId);
-        
+        console.log('ChatWindow: Message ended, messageId:', data.messageId);
+
+        let finalAssistantMessage = recievedMessage;
+
+        if (!finalAssistantMessage || finalAssistantMessage.trim().length === 0) {
+          try {
+            console.warn('No assistant text in stream; attempting non-stream fallback answer.');
+            const fallbackRes = await fetch('/api/search', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                query: message,
+                sessionId: chatId,
+                history: chatHistory,
+                stream: false,
+                searchMode,
+                chatModel: payload.chatModel,
+                embeddingModel: payload.embeddingModel,
+                systemInstructions: payload.systemInstructions,
+                introduceYourself: payload.introduceYourself,
+                userLocation: payload.userLocation,
+              }),
+            });
+
+            if (fallbackRes.ok) {
+              const fallbackData = await fallbackRes.json();
+              finalAssistantMessage = fallbackData.message || '';
+              sources = fallbackData.sources || sources;
+            }
+          } catch (fallbackErr) {
+            console.error('Failed non-stream fallback after empty stream:', fallbackErr);
+          }
+        }
+
         setChatHistory((prevHistory) => [
           ...prevHistory,
           ['human', message],
-          ['assistant', recievedMessage],
+          ['assistant', finalAssistantMessage],
         ]);
 
         setLoading(false);
 
-        // Get the current messages to find the last one
         const currentMessages = messagesRef.current;
         const lastMsg = currentMessages[currentMessages.length - 1];
-        
-        console.log('🏁 ChatWindow: Last message state - content:', lastMsg?.content?.length || 0, 'chars, images:', lastMsg?.images?.length || 0, 'videos:', lastMsg?.videos?.length || 0, 'sources:', lastMsg?.sources?.length || 0);
 
-        // Mark all steps as completed
         setMessages((prevMessages) =>
           prevMessages.map((msg) => {
             if (msg.messageId === data.messageId || msg.messageId === lastMsg?.messageId) {
@@ -1204,15 +1234,13 @@ const ChatWindow = ({ id }: { id?: string }) => {
                 ...msg,
                 currentStep: 'complete',
                 steps: ['search', 'refine', 'read', 'generate', 'complete'],
-                // Ensure final message has all the collected data
                 sources: sources || msg.sources,
-                content: recievedMessage || msg.content,
+                content: finalAssistantMessage || msg.content,
               };
             }
             return msg;
           })
         );
-
         // Generate suggestions for assistant messages with sources
         if (
           lastMsg?.role === 'assistant' &&
@@ -1468,3 +1496,4 @@ const ChatWindow = ({ id }: { id?: string }) => {
 };
 
 export default ChatWindow;
+
