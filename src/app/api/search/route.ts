@@ -20,6 +20,7 @@ import QuickSearchOrchestrator from '@/lib/search/quickSearchOrchestrator';
 import ProSearchOrchestrator from '@/lib/search/proSearchOrchestrator';
 import UltraSearchOrchestrator from '@/lib/search/ultraSearchOrchestrator';
 import { saveSearchTurn } from '@/lib/supabase/search-history';
+import { z } from 'zod';
 
 interface chatModel {
   provider: string;
@@ -46,9 +47,41 @@ interface ChatRequestBody {
   userLocation?: string;
 }
 
+const SearchBodySchema = z.object({
+  query: z.string().min(1).max(4000),
+  sessionId: z.string().uuid().optional(),
+  history: z.array(z.tuple([z.string(), z.string()])).default([]),
+  stream: z.boolean().optional().default(false),
+  systemInstructions: z.string().max(8000).optional(),
+  searchMode: z.enum(['quick', 'pro', 'ultra', 'proSearch', 'ultraSearch']).optional(),
+  introduceYourself: z.string().max(500).optional(),
+  userLocation: z.string().max(200).optional(),
+  chatModel: z
+    .object({
+      provider: z.string(),
+      name: z.string(),
+      customOpenAIKey: z.string().optional(),
+      customOpenAIBaseURL: z.string().optional(),
+    })
+    .optional(),
+  embeddingModel: z
+    .object({
+      provider: z.string(),
+      name: z.string(),
+    })
+    .optional(),
+});
+
 export const POST = async (req: Request) => {
   try {
-    const body: ChatRequestBody = await req.json();
+    const parsed = SearchBodySchema.safeParse(await req.json());
+    if (!parsed.success) {
+      return Response.json(
+        { message: 'Invalid request body', issues: parsed.error.flatten() },
+        { status: 400 },
+      );
+    }
+    const body: ChatRequestBody = parsed.data;
 
     if (!body.query) {
       return Response.json(

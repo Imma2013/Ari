@@ -32,6 +32,7 @@ import QuickSearchOrchestrator from '@/lib/search/quickSearchOrchestrator';
 import ProSearchOrchestrator from '@/lib/search/proSearchOrchestrator';
 import UltraSearchOrchestrator from '@/lib/search/ultraSearchOrchestrator';
 import { saveSearchTurn } from '@/lib/supabase/search-history';
+import { z } from 'zod';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -64,6 +65,28 @@ type Body = {
   introduceYourself?: string;
   userLocation?: string;
 };
+
+const ChatBodySchema = z.object({
+  message: z.object({
+    messageId: z.string().max(200).optional(),
+    chatId: z.string().min(1).max(200),
+    content: z.string().min(1).max(10000),
+  }),
+  searchMode: z.enum(['quickSearch', 'proSearch', 'ultraSearch']).optional(),
+  history: z.array(z.tuple([z.string(), z.string()])).default([]),
+  files: z.array(z.string()).default([]),
+  chatModel: z.object({
+    provider: z.string(),
+    name: z.string(),
+  }),
+  embeddingModel: z.object({
+    provider: z.string(),
+    name: z.string(),
+  }),
+  systemInstructions: z.string().max(8000).default(''),
+  introduceYourself: z.string().max(500).optional(),
+  userLocation: z.string().max(200).optional(),
+});
 
 const handleStreamingEvents = async (
   stream: ReadableStream<SearchStreamData>,
@@ -320,7 +343,14 @@ export const POST = async (req: Request) => {
         async () => {
           const requestId = Date.now().toString(36);
           console.log(`=== Chat API route called (ID: ${requestId}) ===`);
-          const body = (await req.json()) as Body;
+          const parsed = ChatBodySchema.safeParse(await req.json());
+          if (!parsed.success) {
+            return Response.json(
+              { message: 'Invalid request body', issues: parsed.error.flatten() },
+              { status: 400 },
+            );
+          }
+          const body = parsed.data as Body;
     const { message } = body;
 
     if (message.content === '') {
