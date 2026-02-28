@@ -14,9 +14,21 @@ import { Settings } from 'lucide-react';
 import Link from 'next/link';
 import NextError from 'next/error';
 
-const LOCAL_QUICK_MODEL =
-  process.env.NEXT_PUBLIC_WEBLLM_MODEL ||
-  'Llama-3.1-8B-Instruct-q4f32_1-MLC';
+const getPreferredLocalQuickModel = () => {
+  const forcedModel = process.env.NEXT_PUBLIC_WEBLLM_MODEL;
+  if (forcedModel && forcedModel.trim().length > 0) return forcedModel;
+
+  const memoryGB = Number((navigator as any).deviceMemory || 0);
+  const isMobile =
+    typeof navigator !== 'undefined' &&
+    /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+
+  if (isMobile && memoryGB > 0 && memoryGB <= 4) {
+    return 'Llama-3.2-1B-Instruct-q4f16_1-MLC';
+  }
+
+  return 'Llama-3.2-3B-Instruct-q4f16_1-MLC';
+};
 
 let localEnginePromise: Promise<any> | null = null;
 
@@ -35,7 +47,7 @@ const getLocalEngine = async (
   if (!localEnginePromise) {
     localEnginePromise = (async () => {
       const webllm = await import('@mlc-ai/web-llm');
-      return webllm.CreateMLCEngine(LOCAL_QUICK_MODEL, {
+      return webllm.CreateMLCEngine(getPreferredLocalQuickModel(), {
         initProgressCallback: (progress: any) => {
           const text =
             progress?.text || progress?.status || 'Loading local model...';
@@ -544,7 +556,7 @@ const ChatWindow = ({ id }: { id?: string }) => {
 
     if (searchMode === 'quickSearch') {
       try {
-        toast.message('Running local Llama quick search...');
+        toast.message(`Running local quick search (${getPreferredLocalQuickModel()})...`);
         const local = await runLocalQuickSearch(message);
 
         const assistantMessageId = crypto.randomBytes(7).toString('hex');
