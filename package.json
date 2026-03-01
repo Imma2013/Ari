@@ -14,7 +14,7 @@
     "desktop:dev": "concurrently \"next dev -p 3000\" \"wait-on tcp:3000 && electron ./desktop/main.cjs\"",
     "desktop:start": "electron ./desktop/main.cjs",
     "desktop:pack": "electron-builder --dir",
-    "desktop:dist:win": "electron-builder --win nsis",
+    "desktop:dist:win": "electron-builder --win nsis --publish never",
     "lint": "next lint",
     "format:write": "prettier . --write",
     "db:push": "drizzle-kit push",
