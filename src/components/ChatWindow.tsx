@@ -18,16 +18,7 @@ const getPreferredLocalQuickModel = () => {
   const forcedModel = process.env.NEXT_PUBLIC_WEBLLM_MODEL;
   if (forcedModel && forcedModel.trim().length > 0) return forcedModel;
 
-  const memoryGB = Number((navigator as any).deviceMemory || 0);
-  const isMobile =
-    typeof navigator !== 'undefined' &&
-    /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
-
-  if (isMobile && memoryGB > 0 && memoryGB <= 4) {
-    return 'Llama-3.2-1B-Instruct-q4f16_1-MLC';
-  }
-
-  return 'Llama-3.2-3B-Instruct-q4f16_1-MLC';
+  return 'Llama-3.2-1B-Instruct-q4f16_1-MLC';
 };
 
 let localEnginePromise: Promise<any> | null = null;
@@ -124,7 +115,7 @@ Write a direct answer with citations.`;
 
     const desktopResult = await electronLlm.chat({
       prompt: localPrompt,
-      maxTokens: 512,
+      maxTokens: 384,
       temperature: 0.2,
     });
     answer = desktopResult?.text || '';

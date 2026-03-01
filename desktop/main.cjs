@@ -8,10 +8,13 @@ let mainWindow = null;
 let llamaSessionPromise = null;
 let modelDownloadPromise = null;
 
-const DEFAULT_MODEL_FILE = 'Llama-3.2-3B-Instruct-Q4_K_M.gguf';
+const DEFAULT_MODEL_FILE = 'Llama-3.2-1B-Instruct-Q4_K_M.gguf';
 const DEFAULT_START_URL = 'http://localhost:3000';
+const DEFAULT_MAX_TOKENS = 384;
+const DEFAULT_TEMPERATURE = 0.2;
 
 const readRuntimeConfig = () => {
+
   try {
     const configPath = path.join(__dirname, 'runtime-config.json');
     if (!fs.existsSync(configPath)) return {};
@@ -21,6 +24,94 @@ const readRuntimeConfig = () => {
     console.warn('Failed to read desktop runtime config:', error);
     return {};
   }
+};
+
+const toIntOrUndefined = (value) => {
+  if (value === undefined || value === null || value === '') return undefined;
+  const parsed = Number.parseInt(String(value), 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const toNumberOrFallback = (value, fallback) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const toBooleanOrUndefined = (value) => {
+  if (value === undefined || value === null || value === '') return undefined;
+  const text = String(value).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(text)) return true;
+  if (['0', 'false', 'no', 'off'].includes(text)) return false;
+  return undefined;
+};
+
+const getLlamaRuntimeOptions = () => {
+  const runtime = readRuntimeConfig();
+  const llamaRuntime = runtime?.llama || {};
+
+  const gpuSettingRaw =
+    process.env.LLAMA_GPU ??
+    llamaRuntime.gpu ??
+    'auto';
+  const gpuSetting = String(gpuSettingRaw).trim().toLowerCase();
+  const gpu =
+    gpuSetting === 'cpu'
+      ? false
+      : gpuSetting === 'auto'
+      ? 'auto'
+      : gpuSetting || 'auto';
+
+  const gpuLayersRaw =
+    process.env.LLAMA_GPU_LAYERS ??
+    llamaRuntime.gpuLayers ??
+    'auto';
+  const gpuLayersText = String(gpuLayersRaw).trim().toLowerCase();
+  const gpuLayersParsed = toIntOrUndefined(gpuLayersRaw);
+  const gpuLayers =
+    gpuLayersText === 'auto' || gpuLayersText === 'max'
+      ? gpuLayersText
+      : gpuLayersParsed;
+
+  const contextSize =
+    toIntOrUndefined(process.env.LLAMA_CONTEXT_SIZE) ??
+    toIntOrUndefined(llamaRuntime.contextSize);
+  const batchSize =
+    toIntOrUndefined(process.env.LLAMA_BATCH_SIZE) ??
+    toIntOrUndefined(llamaRuntime.batchSize);
+  const threads =
+    toIntOrUndefined(process.env.LLAMA_THREADS) ??
+    toIntOrUndefined(llamaRuntime.threads);
+  const maxThreads =
+    toIntOrUndefined(process.env.LLAMA_MAX_THREADS) ??
+    toIntOrUndefined(llamaRuntime.maxThreads);
+  const flashAttention =
+    toBooleanOrUndefined(process.env.LLAMA_FLASH_ATTENTION) ??
+    toBooleanOrUndefined(llamaRuntime.flashAttention);
+  const useLastBuild =
+    toBooleanOrUndefined(process.env.LLAMA_USE_LAST_BUILD) ??
+    toBooleanOrUndefined(llamaRuntime.useLastBuild) ??
+    false;
+  const maxTokens = toNumberOrFallback(
+    process.env.LLAMA_MAX_TOKENS ?? llamaRuntime.maxTokens,
+    DEFAULT_MAX_TOKENS,
+  );
+  const temperature = toNumberOrFallback(
+    process.env.LLAMA_TEMPERATURE ?? llamaRuntime.temperature,
+    DEFAULT_TEMPERATURE,
+  );
+
+  return {
+    gpu,
+    gpuLayers,
+    contextSize,
+    batchSize,
+    threads,
+    maxThreads,
+    flashAttention,
+    useLastBuild,
+    maxTokens,
+    temperature,
+  };
 };
 
 const getModelPath = () => {
@@ -107,18 +198,33 @@ const ensureSession = async () => {
 
   llamaSessionPromise = (async () => {
     const modelPath = await ensureModelFile();
+    const runtimeOptions = getLlamaRuntimeOptions();
 
     const { getLlama, LlamaChatSession } = await import('node-llama-cpp');
-    const llama = await getLlama();
+    const llama = runtimeOptions.useLastBuild
+      ? await getLlama('lastBuild')
+      : await getLlama({
+          gpu: runtimeOptions.gpu,
+          maxThreads: runtimeOptions.maxThreads,
+        });
+
     const model = await llama.loadModel({
       modelPath,
+      gpuLayers: runtimeOptions.gpuLayers,
     });
-    const context = await model.createContext();
+
+    const context = await model.createContext({
+      contextSize: runtimeOptions.contextSize,
+      batchSize: runtimeOptions.batchSize,
+      threads: runtimeOptions.threads,
+      flashAttention: runtimeOptions.flashAttention,
+    });
+
     const session = new LlamaChatSession({
       contextSequence: context.getSequence(),
     });
 
-    return { session, modelPath };
+    return { session, modelPath, runtimeOptions };
   })().catch((error) => {
     llamaSessionPromise = null;
     throw error;
@@ -130,16 +236,18 @@ const ensureSession = async () => {
 ipcMain.handle('local-llm:availability', async () => {
   try {
     const modelPath = getModelPath();
-    await ensureSession();
+    const { runtimeOptions } = await ensureSession();
     return {
       available: true,
       modelPath,
+      runtimeOptions,
     };
   } catch (error) {
     return {
       available: false,
       reason: error instanceof Error ? error.message : 'Unknown initialization error',
       modelPath: getModelPath(),
+      runtimeOptions: getLlamaRuntimeOptions(),
     };
   }
 });
@@ -147,12 +255,13 @@ ipcMain.handle('local-llm:availability', async () => {
 ipcMain.handle('local-llm:prepare', async () => {
   try {
     const modelPath = await ensureModelFile();
-    return { ok: true, modelPath };
+    return { ok: true, modelPath, runtimeOptions: getLlamaRuntimeOptions() };
   } catch (error) {
     return {
       ok: false,
       reason: error instanceof Error ? error.message : 'Unknown model preparation error',
       modelPath: getModelPath(),
+      runtimeOptions: getLlamaRuntimeOptions(),
     };
   }
 });
@@ -163,10 +272,10 @@ ipcMain.handle('local-llm:chat', async (_event, args) => {
     return { text: '' };
   }
 
-  const { session } = await ensureSession();
+  const { session, runtimeOptions } = await ensureSession();
   const text = await session.prompt(prompt, {
-    maxTokens: Number(args?.maxTokens || 512),
-    temperature: Number(args?.temperature || 0.2),
+    maxTokens: toNumberOrFallback(args?.maxTokens, runtimeOptions.maxTokens),
+    temperature: toNumberOrFallback(args?.temperature, runtimeOptions.temperature),
   });
 
   return {

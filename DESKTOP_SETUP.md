@@ -20,18 +20,18 @@ Option A (recommended for friend installs): auto-download on first run
 
 Option B: manual local file
 - Set `LLAMA_MODEL_PATH` to a local `.gguf` path.
-- If not set, fallback path is `<userData>/models/Llama-3.2-3B-Instruct-Q4_K_M.gguf`.
+- If not set, fallback path is `<userData>/models/Llama-3.2-1B-Instruct-Q4_K_M.gguf`.
 
 Examples:
 ```bash
 # Windows PowerShell
-$env:LLAMA_MODEL_URL="https://your-model-host/Llama-3.2-3B-Instruct-Q4_K_M.gguf"
+$env:LLAMA_MODEL_URL="https://your-model-host/Llama-3.2-1B-Instruct-Q4_K_M.gguf"
 npm run desktop:dev
 ```
 
 ```bash
 # Or manual model path
-$env:LLAMA_MODEL_PATH="C:\models\Llama-3.2-3B-Instruct-Q4_K_M.gguf"
+$env:LLAMA_MODEL_PATH="C:\models\Llama-3.2-1B-Instruct-Q4_K_M.gguf"
 npm run desktop:dev
 ```
 
@@ -58,9 +58,40 @@ Set:
 ```json
 {
   "startUrl": "https://your-vercel-domain.vercel.app",
-  "modelUrl": "https://your-direct-download-host/model.gguf"
+  "modelUrl": "https://your-direct-download-host/model.gguf",
+  "llama": {
+    "gpu": "auto",
+    "gpuLayers": "max",
+    "contextSize": 2048,
+    "batchSize": 512,
+    "threads": 8,
+    "flashAttention": true,
+    "maxTokens": 384,
+    "temperature": 0.2
+  }
 }
 ```
+
+### Performance knobs (no code changes needed)
+You can tune local inference speed/latency using env vars or `runtime-config.json` (`llama` block above):
+
+- `LLAMA_GPU` = `auto` | `cpu` | `metal` | `cuda` | `vulkan` | `rocm`
+- `LLAMA_GPU_LAYERS` = `auto` | `max` | number
+- `LLAMA_CONTEXT_SIZE` = number
+- `LLAMA_BATCH_SIZE` = number
+- `LLAMA_THREADS` = number
+- `LLAMA_MAX_THREADS` = number
+- `LLAMA_FLASH_ATTENTION` = `true` | `false`
+- `LLAMA_MAX_TOKENS` = number
+- `LLAMA_TEMPERATURE` = number
+- `LLAMA_USE_LAST_BUILD` = `true` | `false`
+
+For quick search responsiveness with 1B, start with:
+- `gpu=auto`
+- `gpuLayers=max`
+- `contextSize=2048`
+- `batchSize=512`
+- `maxTokens=256-384`
 
 ## Build Windows installer
 ```bash
@@ -71,6 +102,15 @@ npm run desktop:dist:win
 Output:
 - `dist-desktop/*.exe` (NSIS installer)
 
+## Deploy-first test flow (no localhost dependency)
+1. Deploy web app to Vercel and copy your live URL.
+2. Set `desktop/runtime-config.json`:
+   - `startUrl` to your Vercel URL
+   - `modelUrl` to the 1B GGUF direct link
+3. Build installer: `npm run desktop:dist:win`
+4. Install on target machine and launch the desktop app.
+5. Run Quick Search and confirm first-run model download + local answer.
+
 ## How to make a valid model URL
 Use a direct file URL (not a webpage). For Hugging Face, use:
 ```text
@@ -79,7 +119,7 @@ https://huggingface.co/<org-or-user>/<repo>/resolve/main/<file>.gguf
 
 Example pattern:
 ```text
-https://huggingface.co/mradermacher/Meta-Llama-3.2-3B-Instruct-GGUF/resolve/main/Meta-Llama-3.2-3B-Instruct.Q4_K_M.gguf
+https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf
 ```
 
 You can also host the `.gguf` on Cloudflare R2, S3, or any static file host with direct download enabled.

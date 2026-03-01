@@ -1,4 +1,14 @@
 {
   "startUrl": "https://ari-nine.vercel.app/",
-  "modelUrl": "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf"
+  "modelUrl": "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+  "llama": {
+    "gpu": "auto",
+    "gpuLayers": "max",
+    "contextSize": 2048,
+    "batchSize": 512,
+    "threads": 8,
+    "flashAttention": true,
+    "maxTokens": 384,
+    "temperature": 0.2
+  }
 }
