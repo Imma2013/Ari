@@ -102,25 +102,49 @@ const runLocalQuickSearch = async (
     })
     .join('\n\n');
 
-  const engine = await getLocalEngine(onProgress);
-  const completion = await engine.chat.completions.create({
-    messages: [
-      {
-        role: 'system',
-        content:
-          'You are a concise web research assistant. Use only the provided search snippets, cite source numbers like [1], and say when information is uncertain.',
-      },
-      {
-        role: 'user',
-        content: `Question: ${query}\n\nSearch snippets:\n${contextText}\n\nWrite a direct answer with citations.`,
-      },
-    ],
-    temperature: 0.2,
-  });
+  const localPrompt = `You are a concise web research assistant. Use only the provided search snippets, cite source numbers like [1], and say when information is uncertain.
 
-  const answer =
-    completion?.choices?.[0]?.message?.content?.toString() ||
-    'I could not generate a local response for that query.';
+Question: ${query}
+
+Search snippets:
+${contextText}
+
+Write a direct answer with citations.`;
+
+  let answer = '';
+
+  const electronLlm = (window as any)?.electronLLM;
+  if (electronLlm?.chat) {
+    const desktopResult = await electronLlm.chat({
+      prompt: localPrompt,
+      maxTokens: 512,
+      temperature: 0.2,
+    });
+    answer = desktopResult?.text || '';
+  } else {
+    const engine = await getLocalEngine(onProgress);
+    const completion = await engine.chat.completions.create({
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are a concise web research assistant. Use only the provided search snippets, cite source numbers like [1], and say when information is uncertain.',
+        },
+        {
+          role: 'user',
+          content: `Question: ${query}\n\nSearch snippets:\n${contextText}\n\nWrite a direct answer with citations.`,
+        },
+      ],
+      temperature: 0.2,
+    });
+
+    answer =
+      completion?.choices?.[0]?.message?.content?.toString() || '';
+  }
+
+  if (!answer) {
+    answer = 'I could not generate a local response for that query.';
+  }
 
   const sources = topResults.map((result: any) => ({
     pageContent: result?.content || '',
