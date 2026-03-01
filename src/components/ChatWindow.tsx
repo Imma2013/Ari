@@ -1336,6 +1336,8 @@ const ChatWindow = ({ id }: { id?: string }) => {
       const decoder = new TextDecoder('utf-8');
 
       let partialChunk = '';
+      let sawMessageEnd = false;
+      let lastStreamMessageId = messageId;
 
       while (true) {
         const { value, done } = await reader.read();
@@ -1349,7 +1351,9 @@ const ChatWindow = ({ id }: { id?: string }) => {
           if (!line.trim()) continue;
           try {
             const json = JSON.parse(line);
-            messageHandler(json);
+            if (json?.messageId) lastStreamMessageId = json.messageId;
+            if (json?.type === 'messageEnd') sawMessageEnd = true;
+            await messageHandler(json);
           } catch {
             console.warn('Skipped malformed stream line');
           }
@@ -1359,10 +1363,22 @@ const ChatWindow = ({ id }: { id?: string }) => {
       if (partialChunk.trim()) {
         try {
           const json = JSON.parse(partialChunk);
-          messageHandler(json);
+          if (json?.messageId) lastStreamMessageId = json.messageId;
+          if (json?.type === 'messageEnd') sawMessageEnd = true;
+          await messageHandler(json);
         } catch {
           console.warn('Trailing stream chunk was not valid JSON');
         }
+      }
+
+      if (!sawMessageEnd) {
+        console.warn(
+          'Stream ended without messageEnd; forcing finalize fallback.',
+        );
+        await messageHandler({
+          type: 'messageEnd',
+          messageId: lastStreamMessageId || messageId,
+        });
       }
     } catch (error) {
       console.error('Primary /api/chat request failed, trying /api/search fallback:', error);
