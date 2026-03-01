@@ -1,9 +1,12 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const https = require('https');
+const http = require('http');
 
 let mainWindow = null;
 let llamaSessionPromise = null;
+let modelDownloadPromise = null;
 
 const DEFAULT_MODEL_FILE = 'Llama-3.2-3B-Instruct-Q4_K_M.gguf';
 
@@ -12,16 +15,82 @@ const getModelPath = () => {
   return path.join(app.getPath('userData'), 'models', DEFAULT_MODEL_FILE);
 };
 
+const getModelUrl = () => process.env.LLAMA_MODEL_URL || '';
+
+const downloadFile = (url, destinationPath) =>
+  new Promise((resolve, reject) => {
+    const client = url.startsWith('https://') ? https : http;
+    const request = client.get(url, (response) => {
+      if (
+        response.statusCode &&
+        response.statusCode >= 300 &&
+        response.statusCode < 400 &&
+        response.headers.location
+      ) {
+        response.destroy();
+        downloadFile(response.headers.location, destinationPath)
+          .then(resolve)
+          .catch(reject);
+        return;
+      }
+
+      if (response.statusCode !== 200) {
+        reject(
+          new Error(`Model download failed with status ${response.statusCode}`),
+        );
+        return;
+      }
+
+      fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
+      const tempPath = `${destinationPath}.download`;
+      const fileStream = fs.createWriteStream(tempPath);
+
+      response.pipe(fileStream);
+
+      fileStream.on('finish', () => {
+        fileStream.close(() => {
+          fs.renameSync(tempPath, destinationPath);
+          resolve(destinationPath);
+        });
+      });
+
+      fileStream.on('error', (err) => {
+        try {
+          if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+        } catch {}
+        reject(err);
+      });
+    });
+
+    request.on('error', reject);
+  });
+
+const ensureModelFile = async () => {
+  const modelPath = getModelPath();
+  if (fs.existsSync(modelPath)) return modelPath;
+
+  const modelUrl = getModelUrl();
+  if (!modelUrl) {
+    throw new Error(
+      `Model file not found at ${modelPath}. Set LLAMA_MODEL_URL for auto-download or LLAMA_MODEL_PATH for manual model location.`,
+    );
+  }
+
+  if (!modelDownloadPromise) {
+    modelDownloadPromise = downloadFile(modelUrl, modelPath).finally(() => {
+      modelDownloadPromise = null;
+    });
+  }
+
+  await modelDownloadPromise;
+  return modelPath;
+};
+
 const ensureSession = async () => {
   if (llamaSessionPromise) return llamaSessionPromise;
 
   llamaSessionPromise = (async () => {
-    const modelPath = getModelPath();
-    if (!fs.existsSync(modelPath)) {
-      throw new Error(
-        `Local model file not found at ${modelPath}. Set LLAMA_MODEL_PATH or place a GGUF model in userData/models.`,
-      );
-    }
+    const modelPath = await ensureModelFile();
 
     const { getLlama, LlamaChatSession } = await import('node-llama-cpp');
     const llama = await getLlama();
@@ -45,14 +114,6 @@ const ensureSession = async () => {
 ipcMain.handle('local-llm:availability', async () => {
   try {
     const modelPath = getModelPath();
-    if (!fs.existsSync(modelPath)) {
-      return {
-        available: false,
-        reason: 'Model file is missing',
-        modelPath,
-      };
-    }
-
     await ensureSession();
     return {
       available: true,
@@ -62,6 +123,19 @@ ipcMain.handle('local-llm:availability', async () => {
     return {
       available: false,
       reason: error instanceof Error ? error.message : 'Unknown initialization error',
+      modelPath: getModelPath(),
+    };
+  }
+});
+
+ipcMain.handle('local-llm:prepare', async () => {
+  try {
+    const modelPath = await ensureModelFile();
+    return { ok: true, modelPath };
+  } catch (error) {
+    return {
+      ok: false,
+      reason: error instanceof Error ? error.message : 'Unknown model preparation error',
       modelPath: getModelPath(),
     };
   }

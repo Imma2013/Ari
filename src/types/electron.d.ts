@@ -8,6 +8,11 @@ declare global {
         reason?: string;
         modelPath?: string;
       }>;
+      prepare: () => Promise<{
+        ok: boolean;
+        reason?: string;
+        modelPath?: string;
+      }>;
       chat: (args: {
         prompt: string;
         maxTokens?: number;

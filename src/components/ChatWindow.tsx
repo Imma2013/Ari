@@ -115,6 +115,13 @@ Write a direct answer with citations.`;
 
   const electronLlm = (window as any)?.electronLLM;
   if (electronLlm?.chat) {
+    if (electronLlm?.prepare) {
+      const prep = await electronLlm.prepare();
+      if (!prep?.ok) {
+        throw new Error(prep?.reason || 'Failed to prepare local desktop model');
+      }
+    }
+
     const desktopResult = await electronLlm.chat({
       prompt: localPrompt,
       maxTokens: 512,
