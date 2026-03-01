@@ -3,6 +3,7 @@
   "version": "1.11.0-rc1",
   "license": "MIT",
   "author": "Kamran1819G",
+  "main": "desktop/main.cjs",
   "engines": {
     "node": "20.x"
   },
@@ -12,6 +13,8 @@
     "start": "next start",
     "desktop:dev": "concurrently \"next dev -p 3000\" \"wait-on tcp:3000 && electron ./desktop/main.cjs\"",
     "desktop:start": "electron ./desktop/main.cjs",
+    "desktop:pack": "electron-builder --dir",
+    "desktop:dist:win": "electron-builder --win nsis",
     "lint": "next lint",
     "format:write": "prettier . --write",
     "db:push": "drizzle-kit push",
@@ -84,6 +87,7 @@
     "concurrently": "^9.2.1",
     "drizzle-kit": "^0.31.4",
     "electron": "^36.4.0",
+    "electron-builder": "^26.0.12",
     "eslint": "^8",
     "eslint-config-next": "14.1.4",
     "postcss": "^8.5.6",
@@ -92,5 +96,31 @@
     "wait-on": "^8.0.5",
     "tw-animate-css": "^1.3.8",
     "typescript": "^5"
+  },
+  "build": {
+    "appId": "com.ari.desktop",
+    "productName": "Ari Search",
+    "directories": {
+      "output": "dist-desktop"
+    },
+    "files": [
+      "desktop/**/*",
+      ".next/**/*",
+      "public/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/node-llama-cpp/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   }
 }

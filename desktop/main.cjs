@@ -9,13 +9,29 @@ let llamaSessionPromise = null;
 let modelDownloadPromise = null;
 
 const DEFAULT_MODEL_FILE = 'Llama-3.2-3B-Instruct-Q4_K_M.gguf';
+const DEFAULT_START_URL = 'http://localhost:3000';
+
+const readRuntimeConfig = () => {
+  try {
+    const configPath = path.join(__dirname, 'runtime-config.json');
+    if (!fs.existsSync(configPath)) return {};
+    const raw = fs.readFileSync(configPath, 'utf-8');
+    return JSON.parse(raw);
+  } catch (error) {
+    console.warn('Failed to read desktop runtime config:', error);
+    return {};
+  }
+};
 
 const getModelPath = () => {
   if (process.env.LLAMA_MODEL_PATH) return process.env.LLAMA_MODEL_PATH;
   return path.join(app.getPath('userData'), 'models', DEFAULT_MODEL_FILE);
 };
 
-const getModelUrl = () => process.env.LLAMA_MODEL_URL || '';
+const getModelUrl = () => {
+  const runtime = readRuntimeConfig();
+  return process.env.LLAMA_MODEL_URL || runtime.modelUrl || '';
+};
 
 const downloadFile = (url, destinationPath) =>
   new Promise((resolve, reject) => {
@@ -173,9 +189,11 @@ const createWindow = async () => {
     },
   });
 
+  const runtime = readRuntimeConfig();
   const startUrl =
     process.env.ELECTRON_START_URL ||
-    'http://localhost:3000';
+    runtime.startUrl ||
+    DEFAULT_START_URL;
 
   await mainWindow.loadURL(startUrl);
 };

@@ -49,3 +49,37 @@ This starts:
 - Your friend does not need Ollama.
 - For packaged installers, first-run auto-download is easiest.
 - Web version keeps WebLLM fallback.
+
+## Configure installer defaults (no env needed for friend)
+Edit:
+- `desktop/runtime-config.json`
+
+Set:
+```json
+{
+  "startUrl": "https://your-vercel-domain.vercel.app",
+  "modelUrl": "https://your-direct-download-host/model.gguf"
+}
+```
+
+## Build Windows installer
+```bash
+npm install
+npm run desktop:dist:win
+```
+
+Output:
+- `dist-desktop/*.exe` (NSIS installer)
+
+## How to make a valid model URL
+Use a direct file URL (not a webpage). For Hugging Face, use:
+```text
+https://huggingface.co/<org-or-user>/<repo>/resolve/main/<file>.gguf
+```
+
+Example pattern:
+```text
+https://huggingface.co/mradermacher/Meta-Llama-3.2-3B-Instruct-GGUF/resolve/main/Meta-Llama-3.2-3B-Instruct.Q4_K_M.gguf
+```
+
+You can also host the `.gguf` on Cloudflare R2, S3, or any static file host with direct download enabled.
