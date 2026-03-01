@@ -1,0 +1,45 @@
+name: Desktop Release On Tag
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Next.js app
+        run: npm run build
+
+      - name: Build Windows installer
+        run: npm run desktop:dist:win
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ari-desktop-windows-installer-${{ github.ref_name }}
+          path: dist-desktop/*.exe
+          if-no-files-found: error
+
+      - name: Create or update GitHub release for tag
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Ari Desktop ${{ github.ref_name }}
+          generate_release_notes: true
+          files: dist-desktop/*.exe
