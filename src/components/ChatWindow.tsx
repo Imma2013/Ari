@@ -28,6 +28,24 @@ const isWebGpuSupported = () =>
   typeof navigator !== 'undefined' &&
   'gpu' in navigator;
 
+const fetchWithTimeout = async (
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+  timeoutMs = 12000,
+) => {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+};
+
 const getLocalEngine = async (
   onProgress?: (progressText: string) => void,
 ): Promise<any> => {
@@ -58,30 +76,32 @@ const runLocalQuickSearch = async (
   query: string,
   onProgress?: (progressText: string) => void,
 ) => {
-  const searchRes = await fetch(
-    `/api/searxng?q=${encodeURIComponent(query)}&format=json`,
-    {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
+  let topResults: any[] = [];
+  let searchFailureReason = '';
+
+  try {
+    const searchRes = await fetchWithTimeout(
+      `/api/searxng?q=${encodeURIComponent(query)}&format=json`,
+      {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
       },
-    },
-  );
+      12000,
+    );
 
-  if (!searchRes.ok) {
-    throw new Error(`SearXNG request failed with status ${searchRes.status}`);
-  }
+    if (!searchRes.ok) {
+      throw new Error(`SearXNG request failed with status ${searchRes.status}`);
+    }
 
-  const searchData = await searchRes.json();
-  const rawResults = Array.isArray(searchData?.results) ? searchData.results : [];
-  const topResults = rawResults.slice(0, 8);
-
-  if (topResults.length === 0) {
-    return {
-      answer:
-        "I couldn't find web results for that query right now. Try rephrasing or checking your SearXNG endpoint.",
-      sources: [],
-    };
+    const searchData = await searchRes.json();
+    const rawResults = Array.isArray(searchData?.results) ? searchData.results : [];
+    topResults = rawResults.slice(0, 8);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : 'Unknown search failure';
+    searchFailureReason = reason;
+    console.warn('Local quick search web retrieval failed:', reason);
   }
 
   const contextText = topResults
@@ -93,12 +113,16 @@ const runLocalQuickSearch = async (
     })
     .join('\n\n');
 
-  const localPrompt = `You are a concise web research assistant. Use only the provided search snippets, cite source numbers like [1], and say when information is uncertain.
+  const searchContextBlock =
+    contextText && contextText.trim().length > 0
+      ? `Search snippets:\n${contextText}`
+      : `Search snippets are currently unavailable (${searchFailureReason || 'no results'}). Answer from general knowledge and explicitly state there are no live web sources right now.`;
+
+  const localPrompt = `You are a concise web research assistant. If snippets are available, cite source numbers like [1]. If snippets are unavailable, answer clearly and say no live web sources were available for this response.
 
 Question: ${query}
 
-Search snippets:
-${contextText}
+${searchContextBlock}
 
 Write a direct answer with citations.`;
 
@@ -130,7 +154,7 @@ Write a direct answer with citations.`;
         },
         {
           role: 'user',
-          content: `Question: ${query}\n\nSearch snippets:\n${contextText}\n\nWrite a direct answer with citations.`,
+          content: `Question: ${query}\n\n${searchContextBlock}\n\nWrite a direct answer with citations when snippets are available.`,
         },
       ],
       temperature: 0.2,
@@ -543,7 +567,11 @@ const ChatWindow = ({ id }: { id?: string }) => {
 
   const sendMessage = async (message: string, messageId?: string) => {
     if (loading) return;
-    if (!isConfigReady) {
+    const desktopLocalLlm = (window as any)?.electronLLM;
+    const allowLocalQuickSearchWithoutConfig =
+      searchMode === 'quickSearch' && !!desktopLocalLlm?.chat;
+
+    if (!isConfigReady && !allowLocalQuickSearchWithoutConfig) {
       toast.error('Cannot send message before the configuration is ready');
       return;
     }
@@ -605,7 +633,38 @@ const ChatWindow = ({ id }: { id?: string }) => {
         setLoading(false);
         return;
       } catch (localError) {
-        console.warn('Local quick search failed; falling back to server route.', localError);
+        const isDesktop = !!desktopLocalLlm?.chat;
+        console.warn('Local quick search failed.', localError);
+
+        if (isDesktop) {
+          const assistantMessageId = crypto.randomBytes(7).toString('hex');
+          const errorMessage =
+            "I couldn't run the local model for this query. Please wait for the model download to finish, then try again.";
+
+          setMessages((prevMessages) => [
+            ...prevMessages,
+            {
+              content: errorMessage,
+              messageId: assistantMessageId,
+              chatId: chatId!,
+              role: 'assistant',
+              sources: [],
+              currentStep: 'complete',
+              steps: ['search', 'refine', 'read', 'generate', 'complete'],
+              createdAt: new Date(),
+            },
+          ]);
+
+          setChatHistory((prevHistory) => [
+            ...prevHistory,
+            ['human', message],
+            ['assistant', errorMessage],
+          ]);
+          setMessageAppeared(true);
+          setLoading(false);
+          return;
+        }
+
         toast.error(
           'Local quick search failed on this device. Falling back to server search.',
         );

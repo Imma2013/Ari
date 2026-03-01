@@ -61,7 +61,7 @@ Set:
   "modelUrl": "https://your-direct-download-host/model.gguf",
   "llama": {
     "gpu": "auto",
-    "gpuLayers": "max",
+    "gpuLayers": "auto",
     "contextSize": 2048,
     "batchSize": 512,
     "threads": 8,
@@ -88,7 +88,7 @@ You can tune local inference speed/latency using env vars or `runtime-config.jso
 
 For quick search responsiveness with 1B, start with:
 - `gpu=auto`
-- `gpuLayers=max`
+- `gpuLayers=auto`
 - `contextSize=2048`
 - `batchSize=512`
 - `maxTokens=256-384`
