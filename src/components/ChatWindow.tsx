@@ -1293,24 +1293,28 @@ const ChatWindow = ({ id }: { id?: string }) => {
         if (!finalAssistantMessage || finalAssistantMessage.trim().length === 0) {
           try {
             console.warn('No assistant text in stream; attempting non-stream fallback answer.');
-            const fallbackRes = await fetch('/api/search', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
+            const fallbackRes = await fetchWithTimeout(
+              '/api/search',
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  query: message,
+                  sessionId: chatId,
+                  history: chatHistory,
+                  stream: false,
+                  searchMode,
+                  chatModel: payload.chatModel,
+                  embeddingModel: payload.embeddingModel,
+                  systemInstructions: payload.systemInstructions,
+                  introduceYourself: payload.introduceYourself,
+                  userLocation: payload.userLocation,
+                }),
               },
-              body: JSON.stringify({
-                query: message,
-                sessionId: chatId,
-                history: chatHistory,
-                stream: false,
-                searchMode,
-                chatModel: payload.chatModel,
-                embeddingModel: payload.embeddingModel,
-                systemInstructions: payload.systemInstructions,
-                introduceYourself: payload.introduceYourself,
-                userLocation: payload.userLocation,
-              }),
-            });
+              15000,
+            );
 
             if (fallbackRes.ok) {
               const fallbackData = await fallbackRes.json();
@@ -1320,6 +1324,11 @@ const ChatWindow = ({ id }: { id?: string }) => {
           } catch (fallbackErr) {
             console.error('Failed non-stream fallback after empty stream:', fallbackErr);
           }
+        }
+
+        if (!finalAssistantMessage || finalAssistantMessage.trim().length === 0) {
+          finalAssistantMessage =
+            "I couldn't generate a final response this time. Please try again.";
         }
 
         setChatHistory((prevHistory) => [
@@ -1498,24 +1507,28 @@ const ChatWindow = ({ id }: { id?: string }) => {
       }
     } catch (error) {
       console.error('Primary /api/chat request failed, trying /api/search fallback:', error);
-      const fallbackRes = await fetch('/api/search', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      const fallbackRes = await fetchWithTimeout(
+        '/api/search',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            query: message,
+            sessionId: chatId,
+            history: chatHistory,
+            stream: false,
+            searchMode,
+            chatModel: payload.chatModel,
+            embeddingModel: payload.embeddingModel,
+            systemInstructions: payload.systemInstructions,
+            introduceYourself: payload.introduceYourself,
+            userLocation: payload.userLocation,
+          }),
         },
-        body: JSON.stringify({
-          query: message,
-          sessionId: chatId,
-          history: chatHistory,
-          stream: false,
-          searchMode,
-          chatModel: payload.chatModel,
-          embeddingModel: payload.embeddingModel,
-          systemInstructions: payload.systemInstructions,
-          introduceYourself: payload.introduceYourself,
-          userLocation: payload.userLocation,
-        }),
-      });
+        15000,
+      );
 
       if (!fallbackRes.ok) {
         throw new Error(`Fallback /api/search failed with status ${fallbackRes.status}`);
