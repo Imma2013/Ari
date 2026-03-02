@@ -46,11 +46,11 @@ const fetchWithTimeout = async (
   }
 };
 
-const withTimeout = async <T>(
+async function withTimeout<T>(
   promise: Promise<T>,
   timeoutMs: number,
   timeoutMessage: string,
-): Promise<T> => {
+): Promise<T> {
   let timeoutId: number | undefined;
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeoutId = window.setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
@@ -61,7 +61,7 @@ const withTimeout = async <T>(
   } finally {
     if (timeoutId) window.clearTimeout(timeoutId);
   }
-};
+}
 
 const getLocalEngine = async (
   onProgress?: (progressText: string) => void,
