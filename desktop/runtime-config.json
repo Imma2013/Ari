@@ -1,6 +1,40 @@
 {
   "startUrl": "https://ari-nine.vercel.app/",
-  "modelUrl": "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+  "defaultModelId": "llama-3.2-1b",
+  "models": [
+    {
+      "id": "llama-3.2-1b",
+      "name": "Llama 3.2 1B Instruct (Q4_K_M)",
+      "family": "llama",
+      "sizeB": 1,
+      "file": "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+      "url": "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf"
+    },
+    {
+      "id": "qwen-2.5-1.5b",
+      "name": "Qwen 2.5 1.5B Instruct (Q4_K_M)",
+      "family": "qwen",
+      "sizeB": 1.5,
+      "file": "Qwen2.5-1.5B-Instruct-Q4_K_M.gguf",
+      "url": "https://huggingface.co/bartowski/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"
+    },
+    {
+      "id": "llama-3.2-3b",
+      "name": "Llama 3.2 3B Instruct (Q4_K_M)",
+      "family": "llama",
+      "sizeB": 3,
+      "file": "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+      "url": "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf"
+    },
+    {
+      "id": "qwen-2.5-3b",
+      "name": "Qwen 2.5 3B Instruct (Q4_K_M)",
+      "family": "qwen",
+      "sizeB": 3,
+      "file": "Qwen2.5-3B-Instruct-Q4_K_M.gguf",
+      "url": "https://huggingface.co/bartowski/Qwen2.5-3B-Instruct-GGUF/resolve/main/Qwen2.5-3B-Instruct-Q4_K_M.gguf"
+    }
+  ],
   "llama": {
     "gpu": "auto",
     "gpuLayers": "auto",

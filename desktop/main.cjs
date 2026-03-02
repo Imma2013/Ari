@@ -12,6 +12,42 @@ const DEFAULT_MODEL_FILE = 'Llama-3.2-1B-Instruct-Q4_K_M.gguf';
 const DEFAULT_START_URL = 'http://localhost:3000';
 const DEFAULT_MAX_TOKENS = 384;
 const DEFAULT_TEMPERATURE = 0.2;
+const USER_MODEL_CONFIG_FILE = 'local-model-config.json';
+const MAX_MODEL_SIZE_B = 3;
+const DEFAULT_MODEL_CATALOG = [
+  {
+    id: 'llama-3.2-1b',
+    name: 'Llama 3.2 1B Instruct (Q4_K_M)',
+    family: 'llama',
+    sizeB: 1,
+    file: 'Llama-3.2-1B-Instruct-Q4_K_M.gguf',
+    url: 'https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf',
+  },
+  {
+    id: 'qwen-2.5-1.5b',
+    name: 'Qwen 2.5 1.5B Instruct (Q4_K_M)',
+    family: 'qwen',
+    sizeB: 1.5,
+    file: 'Qwen2.5-1.5B-Instruct-Q4_K_M.gguf',
+    url: 'https://huggingface.co/bartowski/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf',
+  },
+  {
+    id: 'llama-3.2-3b',
+    name: 'Llama 3.2 3B Instruct (Q4_K_M)',
+    family: 'llama',
+    sizeB: 3,
+    file: 'Llama-3.2-3B-Instruct-Q4_K_M.gguf',
+    url: 'https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf',
+  },
+  {
+    id: 'qwen-2.5-3b',
+    name: 'Qwen 2.5 3B Instruct (Q4_K_M)',
+    family: 'qwen',
+    sizeB: 3,
+    file: 'Qwen2.5-3B-Instruct-Q4_K_M.gguf',
+    url: 'https://huggingface.co/bartowski/Qwen2.5-3B-Instruct-GGUF/resolve/main/Qwen2.5-3B-Instruct-Q4_K_M.gguf',
+  },
+];
 
 const readRuntimeConfig = () => {
 
@@ -43,6 +79,112 @@ const toBooleanOrUndefined = (value) => {
   if (['1', 'true', 'yes', 'on'].includes(text)) return true;
   if (['0', 'false', 'no', 'off'].includes(text)) return false;
   return undefined;
+};
+
+const sanitizeModelId = (value) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]/g, '');
+
+const resolveModelFileName = (model) => {
+  if (model?.file) return String(model.file);
+
+  try {
+    const parsed = new URL(String(model?.url || ''));
+    const name = path.basename(parsed.pathname || '');
+    if (name) return name;
+  } catch {}
+
+  return DEFAULT_MODEL_FILE;
+};
+
+const readUserModelConfig = () => {
+  try {
+    const configPath = path.join(app.getPath('userData'), USER_MODEL_CONFIG_FILE);
+    if (!fs.existsSync(configPath)) return {};
+    const raw = fs.readFileSync(configPath, 'utf-8');
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+};
+
+const writeUserModelConfig = (data) => {
+  const configPath = path.join(app.getPath('userData'), USER_MODEL_CONFIG_FILE);
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(configPath, JSON.stringify(data, null, 2), 'utf-8');
+};
+
+const getModelCatalog = () => {
+  const runtime = readRuntimeConfig();
+  const runtimeModels = Array.isArray(runtime?.models) ? runtime.models : [];
+
+  const normalizedRuntimeModels = runtimeModels
+    .map((model) => {
+      const id = sanitizeModelId(model?.id || model?.name);
+      const sizeB = Number(model?.sizeB);
+      const url = String(model?.url || '').trim();
+      if (!id || !url || !Number.isFinite(sizeB) || sizeB > MAX_MODEL_SIZE_B) {
+        return null;
+      }
+
+      return {
+        id,
+        name: String(model?.name || id),
+        family: String(model?.family || 'custom'),
+        sizeB,
+        file: resolveModelFileName(model),
+        url,
+      };
+    })
+    .filter(Boolean);
+
+  if (normalizedRuntimeModels.length > 0) {
+    return normalizedRuntimeModels;
+  }
+
+  return DEFAULT_MODEL_CATALOG;
+};
+
+const getSelectedModelId = () => {
+  const envModelId = sanitizeModelId(process.env.LLAMA_MODEL_ID);
+  if (envModelId) return envModelId;
+
+  const persisted = sanitizeModelId(readUserModelConfig()?.selectedModelId);
+  if (persisted) return persisted;
+
+  const runtime = readRuntimeConfig();
+  const runtimeDefault = sanitizeModelId(runtime?.defaultModelId);
+  if (runtimeDefault) return runtimeDefault;
+
+  return DEFAULT_MODEL_CATALOG[0].id;
+};
+
+const getSelectedModel = () => {
+  const catalog = getModelCatalog();
+  const selectedId = getSelectedModelId();
+
+  return (
+    catalog.find((model) => model.id === selectedId) ||
+    catalog[0] || {
+      id: 'fallback-default',
+      name: 'Llama 3.2 1B Instruct (Q4_K_M)',
+      family: 'llama',
+      sizeB: 1,
+      file: DEFAULT_MODEL_FILE,
+      url: '',
+    }
+  );
+};
+
+const getModelCatalogSnapshot = () => {
+  const catalog = getModelCatalog();
+  const selected = getSelectedModel();
+  return {
+    models: catalog,
+    selectedModelId: selected.id,
+  };
 };
 
 const getLlamaRuntimeOptions = () => {
@@ -116,12 +258,16 @@ const getLlamaRuntimeOptions = () => {
 
 const getModelPath = () => {
   if (process.env.LLAMA_MODEL_PATH) return process.env.LLAMA_MODEL_PATH;
-  return path.join(app.getPath('userData'), 'models', DEFAULT_MODEL_FILE);
+  const selected = getSelectedModel();
+  return path.join(app.getPath('userData'), 'models', resolveModelFileName(selected));
 };
 
 const getModelUrl = () => {
+  if (process.env.LLAMA_MODEL_URL) return process.env.LLAMA_MODEL_URL;
+  const selected = getSelectedModel();
+  if (selected?.url) return selected.url;
   const runtime = readRuntimeConfig();
-  return process.env.LLAMA_MODEL_URL || runtime.modelUrl || '';
+  return runtime.modelUrl || '';
 };
 
 const downloadFile = (url, destinationPath) =>
@@ -236,17 +382,27 @@ const ensureSession = async () => {
 ipcMain.handle('local-llm:availability', async () => {
   try {
     const modelPath = getModelPath();
+    const selectedModel = getSelectedModel();
+    const catalog = getModelCatalogSnapshot();
     const { runtimeOptions } = await ensureSession();
     return {
       available: true,
       modelPath,
+      selectedModel,
+      modelCatalog: catalog.models,
+      selectedModelId: catalog.selectedModelId,
       runtimeOptions,
     };
   } catch (error) {
+    const selectedModel = getSelectedModel();
+    const catalog = getModelCatalogSnapshot();
     return {
       available: false,
       reason: error instanceof Error ? error.message : 'Unknown initialization error',
       modelPath: getModelPath(),
+      selectedModel,
+      modelCatalog: catalog.models,
+      selectedModelId: catalog.selectedModelId,
       runtimeOptions: getLlamaRuntimeOptions(),
     };
   }
@@ -255,15 +411,58 @@ ipcMain.handle('local-llm:availability', async () => {
 ipcMain.handle('local-llm:prepare', async () => {
   try {
     const modelPath = await ensureModelFile();
-    return { ok: true, modelPath, runtimeOptions: getLlamaRuntimeOptions() };
+    const selectedModel = getSelectedModel();
+    const catalog = getModelCatalogSnapshot();
+    return {
+      ok: true,
+      modelPath,
+      selectedModel,
+      modelCatalog: catalog.models,
+      selectedModelId: catalog.selectedModelId,
+      runtimeOptions: getLlamaRuntimeOptions(),
+    };
   } catch (error) {
+    const selectedModel = getSelectedModel();
+    const catalog = getModelCatalogSnapshot();
     return {
       ok: false,
       reason: error instanceof Error ? error.message : 'Unknown model preparation error',
       modelPath: getModelPath(),
+      selectedModel,
+      modelCatalog: catalog.models,
+      selectedModelId: catalog.selectedModelId,
       runtimeOptions: getLlamaRuntimeOptions(),
     };
   }
+});
+
+ipcMain.handle('local-llm:list-models', async () => {
+  return getModelCatalogSnapshot();
+});
+
+ipcMain.handle('local-llm:set-model', async (_event, args) => {
+  const requestedId = sanitizeModelId(args?.modelId);
+  const catalog = getModelCatalog();
+  const target = catalog.find((model) => model.id === requestedId);
+
+  if (!target) {
+    return {
+      ok: false,
+      reason: `Unknown model '${requestedId}'.`,
+      ...getModelCatalogSnapshot(),
+    };
+  }
+
+  writeUserModelConfig({ selectedModelId: target.id });
+  llamaSessionPromise = null;
+  modelDownloadPromise = null;
+
+  return {
+    ok: true,
+    selectedModelId: target.id,
+    selectedModel: target,
+    models: catalog,
+  };
 });
 
 ipcMain.handle('local-llm:chat', async (_event, args) => {

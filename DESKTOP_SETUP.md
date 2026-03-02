@@ -22,6 +22,12 @@ Option B: manual local file
 - Set `LLAMA_MODEL_PATH` to a local `.gguf` path.
 - If not set, fallback path is `<userData>/models/Llama-3.2-1B-Instruct-Q4_K_M.gguf`.
 
+Option C (recommended): use built-in model catalog with 3B cap
+- Configure `desktop/runtime-config.json` `models` list.
+- Set `defaultModelId`.
+- Or override with env `LLAMA_MODEL_ID`.
+- Runtime enforces `sizeB <= 3`.
+
 Examples:
 ```bash
 # Windows PowerShell
@@ -58,7 +64,17 @@ Set:
 ```json
 {
   "startUrl": "https://your-vercel-domain.vercel.app",
-  "modelUrl": "https://your-direct-download-host/model.gguf",
+  "defaultModelId": "llama-3.2-1b",
+  "models": [
+    {
+      "id": "llama-3.2-1b",
+      "name": "Llama 3.2 1B Instruct (Q4_K_M)",
+      "family": "llama",
+      "sizeB": 1,
+      "file": "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+      "url": "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf"
+    }
+  ],
   "llama": {
     "gpu": "auto",
     "gpuLayers": "auto",
@@ -76,6 +92,7 @@ Set:
 You can tune local inference speed/latency using env vars or `runtime-config.json` (`llama` block above):
 
 - `LLAMA_GPU` = `auto` | `cpu` | `metal` | `cuda` | `vulkan` | `rocm`
+- `LLAMA_MODEL_ID` = model id from `models` list (for example `llama-3.2-3b`)
 - `LLAMA_GPU_LAYERS` = `auto` | `max` | number
 - `LLAMA_CONTEXT_SIZE` = number
 - `LLAMA_BATCH_SIZE` = number
@@ -92,6 +109,12 @@ For quick search responsiveness with 1B, start with:
 - `contextSize=2048`
 - `batchSize=512`
 - `maxTokens=256-384`
+
+## Built-in 3B-or-smaller model set
+- `llama-3.2-1b`
+- `qwen-2.5-1.5b`
+- `llama-3.2-3b`
+- `qwen-2.5-3b`
 
 ## Build Windows installer
 ```bash
