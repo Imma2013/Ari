@@ -145,7 +145,7 @@ Write a direct answer with citations.`;
 
   let answer = '';
 
-  const electronLlm = (window as any)?.electronLLM;
+  const electronLlm = window.electronLLM;
   if (electronLlm?.chat) {
     if (electronLlm?.prepare) {
       const prep = await withTimeout(
@@ -158,7 +158,7 @@ Write a direct answer with citations.`;
       }
     }
 
-    const desktopResult = await withTimeout(
+    const desktopResult = await withTimeout<{ text: string }>(
       electronLlm.chat({
         prompt: localPrompt,
         maxTokens: 384,
@@ -592,7 +592,7 @@ const ChatWindow = ({ id }: { id?: string }) => {
 
   const sendMessage = async (message: string, messageId?: string) => {
     if (loading) return;
-    const desktopLocalLlm = (window as any)?.electronLLM;
+    const desktopLocalLlm = window.electronLLM;
     const allowLocalQuickSearchWithoutConfig =
       searchMode === 'quickSearch' && !!desktopLocalLlm?.chat;
 
