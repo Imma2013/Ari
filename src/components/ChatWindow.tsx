@@ -46,6 +46,23 @@ const fetchWithTimeout = async (
   }
 };
 
+const withTimeout = async <T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  timeoutMessage: string,
+): Promise<T> => {
+  let timeoutId: number | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = window.setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutId) window.clearTimeout(timeoutId);
+  }
+};
+
 const getLocalEngine = async (
   onProgress?: (progressText: string) => void,
 ): Promise<any> => {
@@ -131,17 +148,25 @@ Write a direct answer with citations.`;
   const electronLlm = (window as any)?.electronLLM;
   if (electronLlm?.chat) {
     if (electronLlm?.prepare) {
-      const prep = await electronLlm.prepare();
+      const prep = await withTimeout(
+        electronLlm.prepare(),
+        30000,
+        'Local model preparation timed out',
+      );
       if (!prep?.ok) {
         throw new Error(prep?.reason || 'Failed to prepare local desktop model');
       }
     }
 
-    const desktopResult = await electronLlm.chat({
-      prompt: localPrompt,
-      maxTokens: 384,
-      temperature: 0.2,
-    });
+    const desktopResult = await withTimeout(
+      electronLlm.chat({
+        prompt: localPrompt,
+        maxTokens: 384,
+        temperature: 0.2,
+      }),
+      45000,
+      'Local model response timed out',
+    );
     answer = desktopResult?.text || '';
   } else {
     const engine = await getLocalEngine(onProgress);
