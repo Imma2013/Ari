@@ -5,6 +5,7 @@ interface ElectronLocalModel {
   name: string;
   family: string;
   sizeB: number;
+  recommended?: boolean;
   file: string;
   url: string;
 }

@@ -14,15 +14,11 @@ npm install
 ```
 
 ## Model setup options (GGUF)
-Option A (recommended for friend installs): auto-download on first run
-- Set `LLAMA_MODEL_URL` to a direct downloadable `.gguf` URL.
-- App downloads once into `<userData>/models/`.
-
-Option B: manual local file
+Option A: manual local file
 - Set `LLAMA_MODEL_PATH` to a local `.gguf` path.
 - If not set, fallback path is `<userData>/models/Llama-3.2-1B-Instruct-Q4_K_M.gguf`.
 
-Option C (recommended): use built-in model catalog with 3B cap
+Option B (recommended): use built-in model catalog with 3B cap
 - Configure `desktop/runtime-config.json` `models` list.
 - Set `defaultModelId`.
 - Or override with env `LLAMA_MODEL_ID`.
@@ -30,13 +26,7 @@ Option C (recommended): use built-in model catalog with 3B cap
 
 Examples:
 ```bash
-# Windows PowerShell
-$env:LLAMA_MODEL_URL="https://your-model-host/Llama-3.2-1B-Instruct-Q4_K_M.gguf"
-npm run desktop:dev
-```
-
-```bash
-# Or manual model path
+# Manual model path
 $env:LLAMA_MODEL_PATH="C:\models\Llama-3.2-1B-Instruct-Q4_K_M.gguf"
 npm run desktop:dev
 ```
@@ -53,7 +43,7 @@ This starts:
 ## Notes
 - No Ollama is required.
 - Your friend does not need Ollama.
-- For packaged installers, first-run auto-download is easiest.
+- For packaged installers, include clear model download instructions for users.
 - Web version keeps WebLLM fallback.
 
 ## Configure installer defaults (no env needed for friend)
@@ -71,6 +61,7 @@ Set:
       "name": "Llama 3.2 1B Instruct (Q4_K_M)",
       "family": "llama",
       "sizeB": 1,
+      "recommended": true,
       "file": "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
       "url": "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf"
     }
@@ -93,6 +84,7 @@ You can tune local inference speed/latency using env vars or `runtime-config.jso
 
 - `LLAMA_GPU` = `auto` | `cpu` | `metal` | `cuda` | `vulkan` | `rocm`
 - `LLAMA_MODEL_ID` = model id from `models` list (for example `llama-3.2-3b`)
+- `LLAMA_MODEL_PATH` = manual GGUF file path (overrides catalog file location)
 - `LLAMA_GPU_LAYERS` = `auto` | `max` | number
 - `LLAMA_CONTEXT_SIZE` = number
 - `LLAMA_BATCH_SIZE` = number
@@ -111,7 +103,7 @@ For quick search responsiveness with 1B, start with:
 - `maxTokens=256-384`
 
 ## Built-in 3B-or-smaller model set
-- `llama-3.2-1b`
+- `llama-3.2-1b` (recommended)
 - `qwen-2.5-1.5b`
 - `llama-3.2-3b`
 - `qwen-2.5-3b`

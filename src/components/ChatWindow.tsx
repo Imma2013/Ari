@@ -664,7 +664,7 @@ const ChatWindow = ({ id }: { id?: string }) => {
         if (isDesktop) {
           const assistantMessageId = crypto.randomBytes(7).toString('hex');
           const errorMessage =
-            "I couldn't run the local model for this query. Please wait for the model download to finish, then try again.";
+            "I couldn't run the local model for this query. Download the selected GGUF model manually, place it in the local models folder (or set LLAMA_MODEL_PATH), then try again.";
 
           setMessages((prevMessages) => [
             ...prevMessages,

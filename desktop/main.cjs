@@ -1,12 +1,9 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const https = require('https');
-const http = require('http');
 
 let mainWindow = null;
 let llamaSessionPromise = null;
-let modelDownloadPromise = null;
 
 const DEFAULT_MODEL_FILE = 'Llama-3.2-1B-Instruct-Q4_K_M.gguf';
 const DEFAULT_START_URL = 'http://localhost:3000';
@@ -20,6 +17,7 @@ const DEFAULT_MODEL_CATALOG = [
     name: 'Llama 3.2 1B Instruct (Q4_K_M)',
     family: 'llama',
     sizeB: 1,
+    recommended: true,
     file: 'Llama-3.2-1B-Instruct-Q4_K_M.gguf',
     url: 'https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf',
   },
@@ -134,6 +132,7 @@ const getModelCatalog = () => {
         name: String(model?.name || id),
         family: String(model?.family || 'custom'),
         sizeB,
+        recommended: Boolean(model?.recommended),
         file: resolveModelFileName(model),
         url,
       };
@@ -270,73 +269,16 @@ const getModelUrl = () => {
   return runtime.modelUrl || '';
 };
 
-const downloadFile = (url, destinationPath) =>
-  new Promise((resolve, reject) => {
-    const client = url.startsWith('https://') ? https : http;
-    const request = client.get(url, (response) => {
-      if (
-        response.statusCode &&
-        response.statusCode >= 300 &&
-        response.statusCode < 400 &&
-        response.headers.location
-      ) {
-        response.destroy();
-        downloadFile(response.headers.location, destinationPath)
-          .then(resolve)
-          .catch(reject);
-        return;
-      }
-
-      if (response.statusCode !== 200) {
-        reject(
-          new Error(`Model download failed with status ${response.statusCode}`),
-        );
-        return;
-      }
-
-      fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
-      const tempPath = `${destinationPath}.download`;
-      const fileStream = fs.createWriteStream(tempPath);
-
-      response.pipe(fileStream);
-
-      fileStream.on('finish', () => {
-        fileStream.close(() => {
-          fs.renameSync(tempPath, destinationPath);
-          resolve(destinationPath);
-        });
-      });
-
-      fileStream.on('error', (err) => {
-        try {
-          if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-        } catch {}
-        reject(err);
-      });
-    });
-
-    request.on('error', reject);
-  });
-
 const ensureModelFile = async () => {
   const modelPath = getModelPath();
   if (fs.existsSync(modelPath)) return modelPath;
 
+  const selected = getSelectedModel();
   const modelUrl = getModelUrl();
-  if (!modelUrl) {
-    throw new Error(
-      `Model file not found at ${modelPath}. Set LLAMA_MODEL_URL for auto-download or LLAMA_MODEL_PATH for manual model location.`,
-    );
-  }
 
-  if (!modelDownloadPromise) {
-    modelDownloadPromise = downloadFile(modelUrl, modelPath).finally(() => {
-      modelDownloadPromise = null;
-    });
-  }
-
-  await modelDownloadPromise;
-  return modelPath;
+  throw new Error(
+    `Model file not found at ${modelPath}. Download ${selected?.name || 'the selected model'} manually from ${modelUrl || 'its GGUF source URL'} and place it at this path, or set LLAMA_MODEL_PATH.`,
+  );
 };
 
 const ensureSession = async () => {
@@ -455,7 +397,6 @@ ipcMain.handle('local-llm:set-model', async (_event, args) => {
 
   writeUserModelConfig({ selectedModelId: target.id });
   llamaSessionPromise = null;
-  modelDownloadPromise = null;
 
   return {
     ok: true,
