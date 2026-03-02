@@ -1402,13 +1402,17 @@ const ChatWindow = ({ id }: { id?: string }) => {
     };
 
     try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      const res = await fetchWithTimeout(
+        '/api/chat',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
         },
-        body: JSON.stringify(payload),
-      });
+        30000,
+      );
 
       if (!res.ok) {
         throw new Error(`Chat API failed with status ${res.status}`);
@@ -1422,9 +1426,33 @@ const ChatWindow = ({ id }: { id?: string }) => {
       let partialChunk = '';
       let sawMessageEnd = false;
       let lastStreamMessageId = messageId;
+      let streamTimedOut = false;
+      const STREAM_IDLE_TIMEOUT_MS = 15000;
+
+      const readWithIdleTimeout = async () => {
+        return (await Promise.race([
+          reader.read(),
+          new Promise<{ done: true; value?: undefined; timedOut: true }>(
+            (resolve) =>
+              window.setTimeout(
+                () => resolve({ done: true, timedOut: true }),
+                STREAM_IDLE_TIMEOUT_MS,
+              ),
+          ),
+        ])) as
+          | ReadableStreamReadResult<Uint8Array>
+          | { done: true; value?: undefined; timedOut: true };
+      };
 
       while (true) {
-        const { value, done } = await reader.read();
+        const chunkResult = await readWithIdleTimeout();
+        if ('timedOut' in chunkResult) {
+          streamTimedOut = true;
+          console.warn('Chat stream went idle; forcing finalize fallback.');
+          break;
+        }
+
+        const { value, done } = chunkResult;
         if (done) break;
 
         partialChunk += decoder.decode(value, { stream: true });
@@ -1463,6 +1491,10 @@ const ChatWindow = ({ id }: { id?: string }) => {
           type: 'messageEnd',
           messageId: lastStreamMessageId || messageId,
         });
+      }
+
+      if (streamTimedOut) {
+        setLoading(false);
       }
     } catch (error) {
       console.error('Primary /api/chat request failed, trying /api/search fallback:', error);
