@@ -296,6 +296,31 @@ interface EmbeddingModelProvider {
   provider: string;
 }
 
+interface LocalDesktopModelStatus {
+  models: Array<{
+    id: string;
+    name: string;
+    family: string;
+    sizeB: number;
+    recommended?: boolean;
+    file: string;
+    url: string;
+  }>;
+  selectedModelId: string;
+  selectedModel: {
+    id: string;
+    name: string;
+    family: string;
+    sizeB: number;
+    recommended?: boolean;
+    file: string;
+    url: string;
+  };
+  modelPath: string;
+  exists: boolean;
+  downloadUrl?: string;
+}
+
 const checkConfig = async (
   setChatModelProvider: (provider: ChatModelProvider) => void,
   setEmbeddingModelProvider: (provider: EmbeddingModelProvider) => void,
@@ -536,6 +561,8 @@ const ChatWindow = ({ id }: { id?: string }) => {
 
   const [loading, setLoading] = useState(false);
   const [messageAppeared, setMessageAppeared] = useState(false);
+  const [localModelStatus, setLocalModelStatus] = useState<LocalDesktopModelStatus | null>(null);
+  const [isLoadingModelStatus, setIsLoadingModelStatus] = useState(false);
 
   const [chatHistory, setChatHistory] = useState<[string, string][]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -589,6 +616,56 @@ const ChatWindow = ({ id }: { id?: string }) => {
       setIsReady(false);
     }
   }, [isMessagesLoaded, isConfigReady]);
+
+  const refreshLocalModelStatus = async () => {
+    const llm = window.electronLLM;
+    if (!llm?.modelStatus) return;
+
+    try {
+      setIsLoadingModelStatus(true);
+      const status = await llm.modelStatus();
+      setLocalModelStatus(status as LocalDesktopModelStatus);
+    } catch (error) {
+      console.error('Failed to load local desktop model status:', error);
+    } finally {
+      setIsLoadingModelStatus(false);
+    }
+  };
+
+  useEffect(() => {
+    refreshLocalModelStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const isDesktopLocalMode =
+    typeof window !== 'undefined' && Boolean(window.electronLLM?.chat);
+
+  const handleSelectLocalModel = async (modelId: string) => {
+    const llm = window.electronLLM;
+    if (!llm?.setModel) return;
+
+    try {
+      const result = await llm.setModel({ modelId });
+      if (!result?.ok) {
+        toast.error(result?.reason || 'Failed to select model');
+        return;
+      }
+      toast.success(`Selected model: ${result.selectedModel?.name || modelId}`);
+      await refreshLocalModelStatus();
+    } catch (error) {
+      console.error('Failed to select local model:', error);
+      toast.error('Failed to select model');
+    }
+  };
+
+  const openSelectedModelDownload = () => {
+    const url = localModelStatus?.downloadUrl || localModelStatus?.selectedModel?.url;
+    if (!url) {
+      toast.error('No download URL configured for this model');
+      return;
+    }
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
 
   const sendMessage = async (message: string, messageId?: string) => {
     if (loading) return;
@@ -1588,6 +1665,53 @@ const ChatWindow = ({ id }: { id?: string }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConfigReady, isReady, initialMessage]);
 
+  const localModelPanel = isDesktopLocalMode && localModelStatus ? (
+    <div className="mx-auto mt-3 max-w-screen-md px-3">
+      <div className="rounded-lg border border-light-secondary bg-light-secondary/40 p-3 dark:border-dark-secondary dark:bg-dark-secondary/30">
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-sm font-medium text-black dark:text-white">
+            Local Model
+          </p>
+          <p className="text-xs text-black/60 dark:text-white/60">
+            {localModelStatus.exists ? 'Installed' : 'Not installed'}
+          </p>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <select
+            value={localModelStatus.selectedModelId}
+            onChange={(e) => handleSelectLocalModel(e.target.value)}
+            className="h-9 rounded-md border border-light-secondary bg-transparent px-2 text-sm dark:border-dark-secondary"
+          >
+            {localModelStatus.models.map((model) => (
+              <option key={model.id} value={model.id}>
+                {model.name}
+                {model.recommended ? ' (Recommended)' : ''}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={openSelectedModelDownload}
+            className="h-9 rounded-md border border-light-secondary px-3 text-sm dark:border-dark-secondary"
+          >
+            Download Model
+          </button>
+          <button
+            type="button"
+            onClick={refreshLocalModelStatus}
+            className="h-9 rounded-md border border-light-secondary px-3 text-sm dark:border-dark-secondary"
+            disabled={isLoadingModelStatus}
+          >
+            {isLoadingModelStatus ? 'Checking...' : 'Refresh'}
+          </button>
+        </div>
+        <p className="mt-2 truncate text-xs text-black/60 dark:text-white/60">
+          Path: {localModelStatus.modelPath}
+        </p>
+      </div>
+    </div>
+  ) : null;
+
   if (hasError) {
     return (
       <div className="relative">
@@ -1610,6 +1734,7 @@ const ChatWindow = ({ id }: { id?: string }) => {
       <NextError statusCode={404} />
     ) : (
       <div>
+        {localModelPanel}
         {messages.length > 0 ? (
           <>
             <Navbar chatId={chatId!} messages={messages} />

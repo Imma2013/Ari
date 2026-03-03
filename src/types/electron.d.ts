@@ -33,6 +33,14 @@ declare global {
         models: ElectronLocalModel[];
         selectedModelId: string;
       }>;
+      modelStatus: () => Promise<{
+        models: ElectronLocalModel[];
+        selectedModelId: string;
+        selectedModel: ElectronLocalModel;
+        modelPath: string;
+        exists: boolean;
+        downloadUrl?: string;
+      }>;
       setModel: (args: { modelId: string }) => Promise<{
         ok: boolean;
         reason?: string;

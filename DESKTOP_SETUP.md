@@ -108,6 +108,11 @@ For quick search responsiveness with 1B, start with:
 - `llama-3.2-3b`
 - `qwen-2.5-3b`
 
+In desktop mode, Quick Search now shows a local model panel where users can:
+- choose model
+- open model download URL
+- refresh installed-file status
+
 ## Build Windows installer
 ```bash
 npm install

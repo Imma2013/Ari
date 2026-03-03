@@ -186,6 +186,19 @@ const getModelCatalogSnapshot = () => {
   };
 };
 
+const getModelStatus = () => {
+  const selectedModel = getSelectedModel();
+  const modelPath = getModelPath();
+  return {
+    selectedModel,
+    selectedModelId: selectedModel.id,
+    modelPath,
+    exists: fs.existsSync(modelPath),
+    downloadUrl: getModelUrl(),
+    ...getModelCatalogSnapshot(),
+  };
+};
+
 const getLlamaRuntimeOptions = () => {
   const runtime = readRuntimeConfig();
   const llamaRuntime = runtime?.llama || {};
@@ -380,6 +393,10 @@ ipcMain.handle('local-llm:prepare', async () => {
 
 ipcMain.handle('local-llm:list-models', async () => {
   return getModelCatalogSnapshot();
+});
+
+ipcMain.handle('local-llm:model-status', async () => {
+  return getModelStatus();
 });
 
 ipcMain.handle('local-llm:set-model', async (_event, args) => {

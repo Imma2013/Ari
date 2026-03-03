@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('electronLLM', {
   availability: () => ipcRenderer.invoke('local-llm:availability'),
   prepare: () => ipcRenderer.invoke('local-llm:prepare'),
   listModels: () => ipcRenderer.invoke('local-llm:list-models'),
+  modelStatus: () => ipcRenderer.invoke('local-llm:model-status'),
   setModel: (args) => ipcRenderer.invoke('local-llm:set-model', args),
   chat: (args) => ipcRenderer.invoke('local-llm:chat', args),
 });
