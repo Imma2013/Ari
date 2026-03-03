@@ -232,6 +232,9 @@ const resolveStandaloneServerPath = () => {
 
   if (app.isPackaged) {
     candidates.push(
+      path.join(process.resourcesPath, 'app.asar', '.next', 'standalone', 'server.js'),
+    );
+    candidates.push(
       path.join(process.resourcesPath, 'app.asar.unpacked', '.next', 'standalone', 'server.js'),
     );
     candidates.push(

@@ -111,9 +111,7 @@
       "package.json"
     ],
     "asarUnpack": [
-      "node_modules/node-llama-cpp/**/*",
-      ".next/standalone/**/*",
-      ".next/static/**/*"
+      "node_modules/node-llama-cpp/**/*"
     ],
     "win": {
       "target": [
