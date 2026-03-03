@@ -1,14 +1,19 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const http = require('http');
 
 let mainWindow = null;
 let llamaSessionPromise = null;
+let localPackagedServerStarted = false;
 
 const DEFAULT_MODEL_FILE = 'Llama-3.2-1B-Instruct-Q4_K_M.gguf';
 const DEFAULT_START_URL = 'http://localhost:3000';
 const DEFAULT_MAX_TOKENS = 384;
 const DEFAULT_TEMPERATURE = 0.2;
+const DEFAULT_LOCAL_APP_HOST = '127.0.0.1';
+const DEFAULT_LOCAL_APP_PORT = 3210;
+const LOCAL_SERVER_START_TIMEOUT_MS = 60000;
 const USER_MODEL_CONFIG_FILE = 'local-model-config.json';
 const MAX_MODEL_SIZE_B = 3;
 const DEFAULT_MODEL_CATALOG = [
@@ -197,6 +202,81 @@ const getModelStatus = () => {
     downloadUrl: getModelUrl(),
     ...getModelCatalogSnapshot(),
   };
+};
+
+const getPackagedLocalAppUrl = () => {
+  const host = process.env.ELECTRON_LOCAL_HOST || DEFAULT_LOCAL_APP_HOST;
+  const port = Number(process.env.ELECTRON_LOCAL_PORT || DEFAULT_LOCAL_APP_PORT);
+  return `http://${host}:${port}`;
+};
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const isUrlReachable = (url) =>
+  new Promise((resolve) => {
+    const req = http.get(url, (response) => {
+      response.resume();
+      resolve(Boolean(response.statusCode) && response.statusCode < 500);
+    });
+
+    req.setTimeout(3000, () => {
+      req.destroy();
+      resolve(false);
+    });
+
+    req.on('error', () => resolve(false));
+  });
+
+const resolveStandaloneServerPath = () => {
+  const candidates = [];
+
+  if (app.isPackaged) {
+    candidates.push(
+      path.join(process.resourcesPath, 'app.asar.unpacked', '.next', 'standalone', 'server.js'),
+    );
+    candidates.push(
+      path.join(process.resourcesPath, '.next', 'standalone', 'server.js'),
+    );
+  } else {
+    candidates.push(path.join(__dirname, '..', '.next', 'standalone', 'server.js'));
+  }
+
+  return candidates.find((candidate) => fs.existsSync(candidate)) || '';
+};
+
+const waitForLocalServer = async (baseUrl, timeoutMs) => {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const reachable = await isUrlReachable(`${baseUrl}/api/health`);
+    if (reachable) return true;
+    await wait(500);
+  }
+  return false;
+};
+
+const ensurePackagedLocalServer = async () => {
+  if (localPackagedServerStarted) return getPackagedLocalAppUrl();
+
+  const serverPath = resolveStandaloneServerPath();
+  if (!serverPath) {
+    throw new Error('Bundled Next standalone server not found in desktop package.');
+  }
+
+  const localUrl = getPackagedLocalAppUrl();
+  const parsed = new URL(localUrl);
+  process.env.PORT = process.env.PORT || parsed.port;
+  process.env.HOSTNAME = process.env.HOSTNAME || parsed.hostname;
+  process.env.NODE_ENV = process.env.NODE_ENV || 'production';
+
+  require(serverPath);
+  localPackagedServerStarted = true;
+
+  const started = await waitForLocalServer(localUrl, LOCAL_SERVER_START_TIMEOUT_MS);
+  if (!started) {
+    throw new Error('Timed out while starting bundled local app server.');
+  }
+
+  return localUrl;
 };
 
 const getLlamaRuntimeOptions = () => {
@@ -454,6 +534,40 @@ const createWindow = async () => {
       sandbox: false,
     },
   });
+
+  if (app.isPackaged && !process.env.ELECTRON_START_URL) {
+    try {
+      const localUrl = await ensurePackagedLocalServer();
+      await mainWindow.loadURL(localUrl);
+      return;
+    } catch (error) {
+      const allowRemoteFallback =
+        process.env.ELECTRON_ALLOW_REMOTE_FALLBACK === '1';
+      const runtime = readRuntimeConfig();
+      const fallbackUrl = runtime.startUrl || '';
+
+      if (allowRemoteFallback && fallbackUrl) {
+        await mainWindow.loadURL(fallbackUrl);
+        return;
+      }
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Unknown desktop startup error.';
+      const html = `
+        <html><body style="background:#0b0d12;color:#fff;font-family:sans-serif;padding:24px">
+        <h2>Desktop startup failed</h2>
+        <p>The bundled local app server could not start.</p>
+        <pre>${message}</pre>
+        <p>Reinstall the latest desktop build.</p>
+        </body></html>`;
+      await mainWindow.loadURL(
+        `data:text/html;charset=utf-8,${encodeURIComponent(html)}`,
+      );
+      return;
+    }
+  }
 
   const runtime = readRuntimeConfig();
   const startUrl =

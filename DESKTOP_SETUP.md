@@ -45,6 +45,8 @@ This starts:
 - Your friend does not need Ollama.
 - For packaged installers, include clear model download instructions for users.
 - Web version keeps WebLLM fallback.
+- Packaged desktop now starts bundled local app server first (no default remote fallback).
+- To allow remote URL fallback in packaged mode, set `ELECTRON_ALLOW_REMOTE_FALLBACK=1`.
 
 ## Configure installer defaults (no env needed for friend)
 Edit:
@@ -126,10 +128,12 @@ Output:
 1. Deploy web app to Vercel and copy your live URL.
 2. Set `desktop/runtime-config.json`:
    - `startUrl` to your Vercel URL
-   - `modelUrl` to the 1B GGUF direct link
+   - `defaultModelId` to your desired local model
 3. Build installer: `npm run desktop:dist:win`
 4. Install on target machine and launch the desktop app.
-5. Run Quick Search and confirm first-run model download + local answer.
+5. Download selected GGUF manually, place it at the displayed model path, then run Quick Search and confirm local answer.
+
+Note: in packaged builds, `startUrl` is used only when `ELECTRON_ALLOW_REMOTE_FALLBACK=1`.
 
 ## How to make a valid model URL
 Use a direct file URL (not a webpage). For Hugging Face, use:
